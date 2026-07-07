@@ -1,12 +1,29 @@
 # Changelog
 
-## v0.2.2 – CC1101 Bring-Up Logging
+## v0.3.0 - RF Receive Pipeline
 
-- Adds explicit INFO-level CC1101 initialization logs.
-- Stores CC1101 PARTNUM/VERSION so they appear in `dump_config()`.
-- Keeps ESPHome online if CC1101 bring-up fails instead of marking the component failed.
-- Reports whether the CC1101 was detected and configured.
+- Adds first RF receive pipeline for CC1101 async OOK mode.
+- Adds clearer CC1101 startup logging.
+- Keeps native bit-banged SPI implementation.
+- Polls GDO0 for RF edge activity and assembles packet candidates.
+- Adds RX diagnostics in `dump_config()`:
+  - RX enabled
+  - packets seen
+  - edges seen
+  - overruns
+  - last packet duration / edge count / RSSI
+- Leaves protocol decoding and RF transmit as future milestones.
 
-## v0.2.1 – RFBridge Pin Schema Sync
+## v0.2.2 - CC1101 Bring-Up Logging
 
-- Adds `sck_pin`, `mosi_pin`, and `miso_pin` to the ESPHome schema.
+- Added CC1101 PARTNUM/VERSION visibility.
+- Confirmed CC1101 detection/configuration status in ESPHome logs.
+
+## v0.2.1 - RFBridge Pin Schema Sync
+
+- Added SCK, MOSI, and MISO pins to the ESPHome schema.
+
+## v0.1.x
+
+- Established stable ESPHome external component foundation.
+- Removed RadioLib from the ESPHome component path.
