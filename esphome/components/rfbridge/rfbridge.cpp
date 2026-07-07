@@ -76,12 +76,15 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 PARTNUM: 0x%02X", this->cc1101_partnum_);
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
+  ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window capture");
+  ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
+  ESP_LOGCONFIG(TAG, "  RX Capture Window: %u us", RX_CAPTURE_WINDOW_US);
   ESP_LOGCONFIG(TAG, "  RX Packets Seen: %u", this->rx_packets_seen_);
   ESP_LOGCONFIG(TAG, "  RX Edges Seen: %u", this->rx_edges_seen_);
   ESP_LOGCONFIG(TAG, "  RX Overruns: %u", this->rx_overruns_);
   ESP_LOGCONFIG(TAG, "  Discarded Partials: %u", this->rx_discarded_partials_);
-  ESP_LOGCONFIG(TAG, "  Last Packet: %u edges, %u us, RSSI %d dBm", this->rx_last_packet_edges_,
-                this->rx_last_packet_duration_us_, this->rx_last_rssi_dbm_);
+  ESP_LOGCONFIG(TAG, "  Last Packet: %u edges, %u us, RSSI %d dBm trigger %d dBm", this->rx_last_packet_edges_,
+                this->rx_last_packet_duration_us_, this->rx_last_rssi_dbm_, this->rx_last_trigger_rssi_dbm_);
   ESP_LOGCONFIG(TAG, "  Last Packet Gaps: min=%u us avg=%u us max=%u us", this->rx_last_min_gap_us_,
                 this->rx_last_avg_gap_us_, this->rx_last_max_gap_us_);
 }
@@ -322,7 +325,7 @@ int16_t RFBridgeComponent::cc1101_read_rssi_dbm_() {
 
 void RFBridgeComponent::rx_setup_() {
   if (this->gdo0_pin_ == nullptr) {
-    ESP_LOGW(TAG, "GDO0 pin is not configured; RX edge capture disabled");
+    ESP_LOGW(TAG, "GDO0 pin is not configured; RX capture disabled");
     this->rx_enabled_ = false;
     return;
   }
@@ -334,9 +337,11 @@ void RFBridgeComponent::rx_setup_() {
   this->rx_edges_seen_ = 0;
   this->rx_overruns_ = 0;
   this->rx_discarded_partials_ = 0;
-  ESP_LOGI(TAG, "RX pipeline ready: polling GDO0 for async OOK edges");
-  ESP_LOGI(TAG, "RX thresholds: min_edges=%u min_duration=%u us packet_gap=%u us stale_partial=%u us",
-           RX_MIN_EDGES, RX_MIN_PACKET_US, RX_PACKET_GAP_US, RX_STALE_PARTIAL_US);
+  this->rx_last_rssi_poll_ms_ = 0;
+  this->rx_last_capture_ms_ = 0;
+  ESP_LOGI(TAG, "RX pipeline ready: RSSI-gated fixed-window capture");
+  ESP_LOGI(TAG, "RX thresholds: arm_rssi=%d dBm capture_window=%u us cooldown=%u ms min_edges=%u",
+           RX_RSSI_ARM_DBM, RX_CAPTURE_WINDOW_US, RX_CAPTURE_COOLDOWN_MS, RX_MIN_EDGES);
 }
 
 void RFBridgeComponent::rx_poll_() {
@@ -344,64 +349,66 @@ void RFBridgeComponent::rx_poll_() {
     return;
   }
 
-  const uint32_t now_us = micros();
-  const bool level = this->gdo0_pin_->digital_read();
-
-  if (!this->rx_have_level_) {
-    this->rx_reset_packet_(now_us, level);
-    this->rx_have_level_ = true;
-    return;
-  }
-
-  if (level != this->rx_last_level_) {
-    this->rx_record_edge_(now_us, level);
-    return;
-  }
-
-  const uint32_t quiet_us = now_us - this->rx_last_edge_us_;
-
-  if (this->rx_edge_count_ >= RX_MIN_EDGES && quiet_us > RX_PACKET_GAP_US) {
-    this->rx_finish_packet_(now_us);
-    this->rx_reset_packet_(now_us, level);
-    return;
-  }
-
-  if (this->rx_edge_count_ > 0 && this->rx_edge_count_ < RX_MIN_EDGES && quiet_us > RX_STALE_PARTIAL_US) {
-    this->rx_discarded_partials_++;
-    ESP_LOGV(TAG, "Discarding stale RF partial: edges=%u quiet=%u us", this->rx_edge_count_, quiet_us);
-    this->rx_reset_packet_(now_us, level);
-  }
-}
-
-void RFBridgeComponent::rx_record_edge_(uint32_t now_us, bool level) {
-  const uint32_t delta = now_us - this->rx_last_edge_us_;
-  this->rx_last_edge_us_ = now_us;
-  this->rx_last_level_ = level;
-  this->rx_edges_seen_++;
-
-  if (this->rx_edge_count_ == 0) {
-    this->rx_packet_start_us_ = now_us;
-  }
-
-  if (this->rx_edge_count_ < RX_MAX_EDGES) {
-    this->rx_edges_[this->rx_edge_count_++] = delta > 0xFFFF ? 0xFFFF : static_cast<uint16_t>(delta);
-  } else {
-    this->rx_overruns_++;
-  }
-
   const uint32_t now_ms = millis();
-  ESP_LOGVV(TAG, "RF edge #%u delta=%u us level=%d", this->rx_edge_count_, delta, level);
-
-  if ((now_ms - this->rx_last_activity_log_ms_) > 1000) {
-    this->rx_last_activity_log_ms_ = now_ms;
-    ESP_LOGD(TAG, "RF activity detected on GDO0; edges_seen=%u current_edges=%u",
-             this->rx_edges_seen_, this->rx_edge_count_);
+  if ((now_ms - this->rx_last_rssi_poll_ms_) < RX_RSSI_POLL_INTERVAL_MS) {
+    return;
   }
+  this->rx_last_rssi_poll_ms_ = now_ms;
+
+  const int16_t rssi = this->cc1101_read_rssi_dbm_();
+  this->rx_last_rssi_dbm_ = rssi;
+
+  if (rssi < RX_RSSI_ARM_DBM) {
+    return;
+  }
+
+  if ((now_ms - this->rx_last_capture_ms_) < RX_CAPTURE_COOLDOWN_MS) {
+    ESP_LOGV(TAG, "RSSI %d dBm crossed threshold during cooldown", rssi);
+    return;
+  }
+
+  this->rx_last_capture_ms_ = now_ms;
+  ESP_LOGI(TAG, "RSSI trigger: %d dBm >= %d dBm; capturing GDO0 for %u us",
+           rssi, RX_RSSI_ARM_DBM, RX_CAPTURE_WINDOW_US);
+  this->rx_capture_window_(rssi);
 }
 
-void RFBridgeComponent::rx_finish_packet_(uint32_t now_us) {
-  const uint32_t duration_us = now_us - this->rx_packet_start_us_;
-  if (duration_us < RX_MIN_PACKET_US) {
+void RFBridgeComponent::rx_capture_window_(int16_t trigger_rssi_dbm) {
+  this->rx_edge_count_ = 0;
+  const uint32_t start_us = micros();
+  uint32_t last_edge_us = start_us;
+  bool last_level = this->gdo0_pin_->digital_read();
+
+  while ((micros() - start_us) < RX_CAPTURE_WINDOW_US) {
+    const bool level = this->gdo0_pin_->digital_read();
+    if (level == last_level) {
+      continue;
+    }
+
+    const uint32_t now_us = micros();
+    const uint32_t delta = now_us - last_edge_us;
+    last_edge_us = now_us;
+    last_level = level;
+    this->rx_edges_seen_++;
+
+    if (this->rx_edge_count_ < RX_MAX_EDGES) {
+      this->rx_edges_[this->rx_edge_count_++] = delta > 0xFFFF ? 0xFFFF : static_cast<uint16_t>(delta);
+    } else {
+      this->rx_overruns_++;
+    }
+  }
+
+  this->rx_finish_capture_(start_us, micros(), trigger_rssi_dbm);
+}
+
+void RFBridgeComponent::rx_finish_capture_(uint32_t start_us, uint32_t end_us, int16_t trigger_rssi_dbm) {
+  const uint32_t duration_us = end_us - start_us;
+  this->rx_last_trigger_rssi_dbm_ = trigger_rssi_dbm;
+
+  if (this->rx_edge_count_ < RX_MIN_EDGES || duration_us < RX_MIN_PACKET_US) {
+    this->rx_discarded_partials_++;
+    ESP_LOGI(TAG, "RF capture discarded: edges=%u duration=%u us trigger_rssi=%d dBm",
+             this->rx_edge_count_, duration_us, trigger_rssi_dbm);
     return;
   }
 
@@ -423,9 +430,9 @@ void RFBridgeComponent::rx_finish_packet_(uint32_t now_us) {
   this->rx_last_avg_gap_us_ = this->rx_edge_count_ > 0 ? static_cast<uint16_t>(sum_gap / this->rx_edge_count_) : 0;
   this->rx_last_rssi_dbm_ = this->cc1101_read_rssi_dbm_();
 
-  ESP_LOGI(TAG, "RF packet candidate #%u: edges=%u duration=%u us rssi=%d dBm gaps[min/avg/max]=%u/%u/%u us",
+  ESP_LOGI(TAG, "RF RSSI-gated capture #%u: edges=%u duration=%u us trigger_rssi=%d dBm end_rssi=%d dBm gaps[min/avg/max]=%u/%u/%u us",
            this->rx_packets_seen_, this->rx_last_packet_edges_, this->rx_last_packet_duration_us_,
-           this->rx_last_rssi_dbm_, this->rx_last_min_gap_us_, this->rx_last_avg_gap_us_,
+           trigger_rssi_dbm, this->rx_last_rssi_dbm_, this->rx_last_min_gap_us_, this->rx_last_avg_gap_us_,
            this->rx_last_max_gap_us_);
 }
 

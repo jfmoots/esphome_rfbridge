@@ -74,18 +74,17 @@ class RFBridgeComponent : public Component {
 
   void rx_setup_();
   void rx_poll_();
-  void rx_record_edge_(uint32_t now_us, bool level);
-  void rx_finish_packet_(uint32_t now_us);
+  void rx_capture_window_(int16_t trigger_rssi_dbm);
+  void rx_finish_capture_(uint32_t start_us, uint32_t end_us, int16_t trigger_rssi_dbm);
   void rx_reset_packet_(uint32_t now_us, bool level);
 
-  static constexpr uint16_t RX_MAX_EDGES = 180;
-  // Treat a packet as complete only after a real quiet period. Outprize packets
-  // contain 70+ edges and can include several millisecond gaps inside a frame,
-  // so short gaps must not prematurely split packets.
-  static constexpr uint32_t RX_PACKET_GAP_US = 25000;
-  // Reset sparse/noisy partial captures so background RF does not slowly
-  // accumulate into fake packets.
-  static constexpr uint32_t RX_STALE_PARTIAL_US = 25000;
+  static constexpr uint16_t RX_MAX_EDGES = 220;
+  // Match the original diagnostic sniffer shape: ignore GDO0 chatter until
+  // RSSI indicates a real nearby transmitter, then capture a fixed window.
+  static constexpr int16_t RX_RSSI_ARM_DBM = -80;
+  static constexpr uint32_t RX_CAPTURE_WINDOW_US = 140000;
+  static constexpr uint32_t RX_CAPTURE_COOLDOWN_MS = 250;
+  static constexpr uint32_t RX_RSSI_POLL_INTERVAL_MS = 10;
   static constexpr uint32_t RX_MIN_PACKET_US = 15000;
   static constexpr uint16_t RX_MIN_EDGES = 40;
 
@@ -95,6 +94,8 @@ class RFBridgeComponent : public Component {
   uint32_t rx_last_edge_us_{0};
   uint32_t rx_packet_start_us_{0};
   uint32_t rx_last_activity_log_ms_{0};
+  uint32_t rx_last_rssi_poll_ms_{0};
+  uint32_t rx_last_capture_ms_{0};
   uint16_t rx_edge_count_{0};
   uint16_t rx_overruns_{0};
   uint32_t rx_packets_seen_{0};
@@ -106,6 +107,7 @@ class RFBridgeComponent : public Component {
   uint16_t rx_last_avg_gap_us_{0};
   uint16_t rx_discarded_partials_{0};
   int16_t rx_last_rssi_dbm_{0};
+  int16_t rx_last_trigger_rssi_dbm_{0};
   uint16_t rx_edges_[RX_MAX_EDGES]{};
 
   uint8_t outprize_speed_code_(uint8_t speed_percent) const;
