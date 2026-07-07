@@ -77,7 +77,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 PARTNUM: 0x%02X", this->cc1101_partnum_);
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
-  ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window RF protocol analyzer");
+  ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window Outprize candidate decoder");
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
   ESP_LOGCONFIG(TAG, "  RX Capture Window: %u us", RX_CAPTURE_WINDOW_US);
   ESP_LOGCONFIG(TAG, "  RX Packets Seen: %u", this->rx_packets_seen_);
@@ -395,7 +395,9 @@ void RFBridgeComponent::rx_capture_window_(int16_t trigger_rssi_dbm) {
     this->rx_edges_seen_++;
 
     if (this->rx_edge_count_ < RX_MAX_EDGES) {
-      this->rx_edges_[this->rx_edge_count_++] = delta > 0xFFFF ? 0xFFFF : static_cast<uint16_t>(delta);
+      this->rx_edges_[this->rx_edge_count_] = delta > 0xFFFF ? 0xFFFF : static_cast<uint16_t>(delta);
+      this->rx_levels_[this->rx_edge_count_] = last_level ? 1 : 0;
+      this->rx_edge_count_++;
     } else {
       this->rx_overruns_++;
     }
@@ -441,6 +443,7 @@ void RFBridgeComponent::rx_finish_capture_(uint32_t start_us, uint32_t end_us, i
   this->rx_log_raw_timings_(this->rx_packets_seen_);
   this->rx_log_pulse_histogram_(this->rx_packets_seen_);
   this->rx_log_protocol_analysis_(this->rx_packets_seen_);
+  this->rx_log_outprize_decode_(this->rx_packets_seen_);
 }
 
 void RFBridgeComponent::rx_log_raw_timings_(uint32_t capture_no) {
@@ -758,6 +761,131 @@ void RFBridgeComponent::rx_log_protocol_analysis_(uint32_t capture_no) {
   } else {
     ESP_LOGI(TAG, "Capture #%u repeated motif: none detected", capture_no);
   }
+}
+
+
+bool RFBridgeComponent::rx_outprize_decode_from_index_(uint16_t start_index, bool *bits, uint16_t *bit_count) const {
+  *bit_count = 0;
+
+  for (uint16_t i = start_index; i + 1 < this->rx_edge_count_ && *bit_count < 64; i += 2) {
+    const uint16_t pulse = this->rx_edges_[i];
+    const uint16_t gap = this->rx_edges_[i + 1];
+
+    if (pulse < OUTPRIZE_SHORT_US_MIN || pulse > OUTPRIZE_SHORT_US_MAX) {
+      return false;
+    }
+
+    if (gap >= OUTPRIZE_SHORT_US_MIN && gap <= OUTPRIZE_SHORT_US_MAX) {
+      bits[(*bit_count)++] = false;
+    } else if (gap >= OUTPRIZE_LONG_US_MIN && gap <= OUTPRIZE_LONG_US_MAX) {
+      bits[(*bit_count)++] = true;
+    } else {
+      return false;
+    }
+  }
+
+  return *bit_count >= 24 && *bit_count <= 40;
+}
+
+void RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
+  if (this->rx_edge_count_ < OUTPRIZE_MIN_EDGES || this->rx_edge_count_ > OUTPRIZE_MAX_EDGES) {
+    ESP_LOGI(TAG, "Capture #%u Outprize decoder: skipped (edge count %u outside %u-%u)",
+             capture_no, this->rx_edge_count_, OUTPRIZE_MIN_EDGES, OUTPRIZE_MAX_EDGES);
+    return;
+  }
+
+  uint16_t shortish = 0;
+  uint16_t longish = 0;
+  uint16_t syncish = 0;
+  for (uint16_t i = 0; i < this->rx_edge_count_; i++) {
+    const uint16_t t = this->rx_edges_[i];
+    if (t >= OUTPRIZE_SHORT_US_MIN && t <= OUTPRIZE_SHORT_US_MAX) {
+      shortish++;
+    } else if (t >= OUTPRIZE_LONG_US_MIN && t <= OUTPRIZE_LONG_US_MAX) {
+      longish++;
+    } else if (t >= OUTPRIZE_SYNC_US_MIN && t <= OUTPRIZE_SYNC_US_MAX) {
+      syncish++;
+    }
+  }
+
+  if (shortish < 18 || longish < 6) {
+    ESP_LOGI(TAG, "Capture #%u Outprize decoder: skipped (short=%u long=%u sync=%u)",
+             capture_no, shortish, longish, syncish);
+    return;
+  }
+
+  bool best_bits[64]{};
+  uint16_t best_bit_count = 0;
+  uint16_t best_start = 0xFFFF;
+
+  // Prefer the first valid short pulse after a sync gap when present, but also
+  // scan every possible short-pulse alignment. RSSI-gated captures can start
+  // after the sync gap, so a sync-only strategy misses clean frames.
+  for (uint16_t i = 0; i < this->rx_edge_count_; i++) {
+    bool trial_bits[64]{};
+    uint16_t trial_count = 0;
+
+    if (this->rx_edges_[i] < OUTPRIZE_SHORT_US_MIN || this->rx_edges_[i] > OUTPRIZE_SHORT_US_MAX) {
+      continue;
+    }
+    if (!this->rx_outprize_decode_from_index_(i, trial_bits, &trial_count)) {
+      continue;
+    }
+    if (trial_count > best_bit_count) {
+      best_bit_count = trial_count;
+      best_start = i;
+      for (uint16_t j = 0; j < trial_count; j++) {
+        best_bits[j] = trial_bits[j];
+      }
+    }
+  }
+
+  if (best_bit_count == 0) {
+    ESP_LOGI(TAG, "Capture #%u Outprize decoder: candidate timing present, but no valid PWM gap alignment", capture_no);
+    return;
+  }
+
+  uint32_t low24 = 0;
+  const uint16_t low24_start = best_bit_count > 24 ? best_bit_count - 24 : 0;
+  for (uint16_t i = low24_start; i < best_bit_count; i++) {
+    low24 = (low24 << 1) | (best_bits[i] ? 1UL : 0UL);
+  }
+  low24 &= 0xFFFFFF;
+
+  char binary[72]{};
+  for (uint16_t i = 0; i < best_bit_count && i < sizeof(binary) - 1; i++) {
+    binary[i] = best_bits[i] ? '1' : '0';
+  }
+
+  char hexbuf[48]{};
+  uint16_t hpos = 0;
+  uint8_t nibble = 0;
+  uint8_t used = 0;
+  for (uint16_t i = 0; i < best_bit_count && hpos + 3 < sizeof(hexbuf); i++) {
+    nibble = static_cast<uint8_t>((nibble << 1) | (best_bits[i] ? 1 : 0));
+    used++;
+    if (used == 4) {
+      hpos += snprintf(hexbuf + hpos, sizeof(hexbuf) - hpos, "%X ", nibble);
+      nibble = 0;
+      used = 0;
+    }
+  }
+  if (used > 0 && hpos + 2 < sizeof(hexbuf)) {
+    nibble <<= (4 - used);
+    hpos += snprintf(hexbuf + hpos, sizeof(hexbuf) - hpos, "%X", nibble);
+  } else if (hpos > 0 && hexbuf[hpos - 1] == ' ') {
+    hexbuf[hpos - 1] = '\0';
+  }
+
+  ESP_LOGI(TAG, "===== OUTPRIZE_PACKET_CANDIDATE =====");
+  ESP_LOGI(TAG, "Decoder: PWM gap short=0 long=1");
+  ESP_LOGI(TAG, "Capture: #%u RSSI trigger=%d dBm end=%d dBm", capture_no, this->rx_last_trigger_rssi_dbm_, this->rx_last_rssi_dbm_);
+  ESP_LOGI(TAG, "Edges: %u  DecodeStartIndex: %u  Bits: %u", this->rx_edge_count_, best_start, best_bit_count);
+  ESP_LOGI(TAG, "Binary: %s", binary);
+  ESP_LOGI(TAG, "Hex: %s", hexbuf);
+  ESP_LOGI(TAG, "Low24: 0x%06X", low24);
+  ESP_LOGI(TAG, "Timing counts: short=%u long=%u sync=%u", shortish, longish, syncish);
+  ESP_LOGI(TAG, "====================================");
 }
 
 void RFBridgeComponent::rx_reset_packet_(uint32_t now_us, bool level) {

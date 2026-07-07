@@ -79,6 +79,8 @@ class RFBridgeComponent : public Component {
   void rx_log_raw_timings_(uint32_t capture_no);
   void rx_log_pulse_histogram_(uint32_t capture_no);
   void rx_log_protocol_analysis_(uint32_t capture_no);
+  void rx_log_outprize_decode_(uint32_t capture_no);
+  bool rx_outprize_decode_from_index_(uint16_t start_index, bool *bits, uint16_t *bit_count) const;
   uint16_t rx_normalize_pulse_(uint16_t pulse_us) const;
   uint32_t rx_capture_fingerprint_() const;
   void rx_reset_packet_(uint32_t now_us, bool level);
@@ -99,6 +101,14 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t RX_ANALYSIS_BIN_US = 64;
   static constexpr uint16_t RX_ANALYSIS_BIN_COUNT = 40;
   static constexpr uint16_t RX_ANALYSIS_MAX_PRINTED_SYMBOLS = 96;
+  static constexpr uint16_t OUTPRIZE_MIN_EDGES = 60;
+  static constexpr uint16_t OUTPRIZE_MAX_EDGES = 95;
+  static constexpr uint16_t OUTPRIZE_SHORT_US_MIN = 350;
+  static constexpr uint16_t OUTPRIZE_SHORT_US_MAX = 750;
+  static constexpr uint16_t OUTPRIZE_LONG_US_MIN = 1150;
+  static constexpr uint16_t OUTPRIZE_LONG_US_MAX = 1800;
+  static constexpr uint16_t OUTPRIZE_SYNC_US_MIN = 3800;
+  static constexpr uint16_t OUTPRIZE_SYNC_US_MAX = 5200;
 
   bool rx_enabled_{false};
   bool rx_have_level_{false};
@@ -124,6 +134,7 @@ class RFBridgeComponent : public Component {
   uint16_t rx_last_filtered_edges_{0};
   uint16_t rx_last_unique_bins_{0};
   uint16_t rx_edges_[RX_MAX_EDGES]{};
+  uint8_t rx_levels_[RX_MAX_EDGES]{};
 
   uint8_t outprize_speed_code_(uint8_t speed_percent) const;
   bool transmit_low24_(uint32_t remote_id, uint32_t low24);

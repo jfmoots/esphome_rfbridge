@@ -1,19 +1,31 @@
 # ESPHome RF Bridge
 
-Current release: **v0.9.0 – Symbol Stream Analyzer**
+ESPHome external component for an ESP32 + CC1101 RF bridge.
 
-ESPHome external component for a CC1101-based RF bridge.
+## v0.10.0
 
-## v0.9.0 highlights
+This release adds the first Outprize-specific decoder pass on top of the generic RF analyzer.
 
-- Keeps RSSI-gated fixed-window capture.
-- Keeps raw pulse timing, histograms, normalized pulses, and fingerprints.
-- Adds compact symbol alphabet output for each capture.
-- Adds symbol stream output to make repeated patterns easier to see.
-- Adds run-length compressed symbol output.
-- Adds simple repeated motif detection.
+The receiver still uses the proven RSSI-gated capture strategy:
 
-## Example ESPHome YAML
+- arm when RSSI rises above -80 dBm
+- capture GDO0 for 140 ms
+- log raw timings, histograms, normalized symbols, fingerprints, and motifs
+- additionally attempt Outprize PWM gap decoding
+
+Expected successful Outprize output includes:
+
+```text
+===== OUTPRIZE_PACKET_CANDIDATE =====
+Decoder: PWM gap short=0 long=1
+Edges: 70  DecodeStartIndex: ...  Bits: ...
+Binary: ...
+Hex: ...
+Low24: 0x......
+====================================
+```
+
+## ESPHome YAML
 
 ```yaml
 external_components:
