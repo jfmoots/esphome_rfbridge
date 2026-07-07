@@ -1,5 +1,11 @@
 # ESPHome RF Bridge
 
+Current release: **v0.8.0 – Capture Fingerprint Analyzer**
+
+This release adds normalized pulse analysis and capture fingerprints on top of the RSSI-gated raw pulse recorder. Repeated RF transmissions can now be compared by fingerprint before protocol-specific decoding is implemented.
+
+# ESPHome RF Bridge
+
 ESPHome RF Bridge is a protocol-agnostic CC1101 RF bridge component for ESPHome.
 
 ## Current release: v0.7.0

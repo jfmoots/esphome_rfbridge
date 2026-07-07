@@ -78,6 +78,9 @@ class RFBridgeComponent : public Component {
   void rx_finish_capture_(uint32_t start_us, uint32_t end_us, int16_t trigger_rssi_dbm);
   void rx_log_raw_timings_(uint32_t capture_no);
   void rx_log_pulse_histogram_(uint32_t capture_no);
+  void rx_log_protocol_analysis_(uint32_t capture_no);
+  uint16_t rx_normalize_pulse_(uint16_t pulse_us) const;
+  uint32_t rx_capture_fingerprint_() const;
   void rx_reset_packet_(uint32_t now_us, bool level);
 
   static constexpr uint16_t RX_MAX_EDGES = 220;
@@ -91,6 +94,11 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t RX_MIN_EDGES = 40;
   static constexpr uint16_t RX_HIST_BIN_US = 64;
   static constexpr uint16_t RX_HIST_BIN_COUNT = 80;
+  static constexpr uint16_t RX_ANALYSIS_MIN_US = 50;
+  static constexpr uint16_t RX_ANALYSIS_MAX_US = 2000;
+  static constexpr uint16_t RX_ANALYSIS_BIN_US = 64;
+  static constexpr uint16_t RX_ANALYSIS_BIN_COUNT = 40;
+  static constexpr uint16_t RX_ANALYSIS_MAX_PRINTED_SYMBOLS = 96;
 
   bool rx_enabled_{false};
   bool rx_have_level_{false};
@@ -112,6 +120,9 @@ class RFBridgeComponent : public Component {
   uint16_t rx_discarded_partials_{0};
   int16_t rx_last_rssi_dbm_{0};
   int16_t rx_last_trigger_rssi_dbm_{0};
+  uint32_t rx_last_fingerprint_{0};
+  uint16_t rx_last_filtered_edges_{0};
+  uint16_t rx_last_unique_bins_{0};
   uint16_t rx_edges_[RX_MAX_EDGES]{};
 
   uint8_t outprize_speed_code_(uint8_t speed_percent) const;

@@ -77,7 +77,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 PARTNUM: 0x%02X", this->cc1101_partnum_);
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
-  ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window RF pulse analyzer");
+  ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window RF protocol analyzer");
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
   ESP_LOGCONFIG(TAG, "  RX Capture Window: %u us", RX_CAPTURE_WINDOW_US);
   ESP_LOGCONFIG(TAG, "  RX Packets Seen: %u", this->rx_packets_seen_);
@@ -88,6 +88,8 @@ void RFBridgeComponent::dump_config() {
                 this->rx_last_packet_duration_us_, this->rx_last_rssi_dbm_, this->rx_last_trigger_rssi_dbm_);
   ESP_LOGCONFIG(TAG, "  Last Packet Gaps: min=%u us avg=%u us max=%u us", this->rx_last_min_gap_us_,
                 this->rx_last_avg_gap_us_, this->rx_last_max_gap_us_);
+  ESP_LOGCONFIG(TAG, "  Last Fingerprint: 0x%08X filtered=%u unique_bins=%u", this->rx_last_fingerprint_,
+                this->rx_last_filtered_edges_, this->rx_last_unique_bins_);
 }
 
 bool RFBridgeComponent::cc1101_begin_() {
@@ -438,6 +440,7 @@ void RFBridgeComponent::rx_finish_capture_(uint32_t start_us, uint32_t end_us, i
 
   this->rx_log_raw_timings_(this->rx_packets_seen_);
   this->rx_log_pulse_histogram_(this->rx_packets_seen_);
+  this->rx_log_protocol_analysis_(this->rx_packets_seen_);
 }
 
 void RFBridgeComponent::rx_log_raw_timings_(uint32_t capture_no) {
@@ -509,6 +512,119 @@ void RFBridgeComponent::rx_log_pulse_histogram_(uint32_t capture_no) {
     }
     used[best_bin] = true;
     ESP_LOGI(TAG, "  #%u: ~%u us  count=%u", rank + 1, best_bin * RX_HIST_BIN_US, best_count);
+  }
+}
+
+
+uint16_t RFBridgeComponent::rx_normalize_pulse_(uint16_t pulse_us) const {
+  if (pulse_us < RX_ANALYSIS_MIN_US || pulse_us > RX_ANALYSIS_MAX_US) {
+    return 0;
+  }
+  return static_cast<uint16_t>(((pulse_us + (RX_ANALYSIS_BIN_US / 2)) / RX_ANALYSIS_BIN_US) * RX_ANALYSIS_BIN_US);
+}
+
+uint32_t RFBridgeComponent::rx_capture_fingerprint_() const {
+  // FNV-1a over the normalized pulse stream. This is not a protocol CRC; it is
+  // just a quick signature for comparing repeated captures.
+  uint32_t hash = 2166136261UL;
+  for (uint16_t i = 0; i < this->rx_edge_count_; i++) {
+    const uint16_t norm = this->rx_normalize_pulse_(this->rx_edges_[i]);
+    if (norm == 0) {
+      continue;
+    }
+    hash ^= static_cast<uint8_t>(norm & 0xFF);
+    hash *= 16777619UL;
+    hash ^= static_cast<uint8_t>((norm >> 8) & 0xFF);
+    hash *= 16777619UL;
+  }
+  return hash;
+}
+
+void RFBridgeComponent::rx_log_protocol_analysis_(uint32_t capture_no) {
+  uint16_t filtered_count = 0;
+  uint16_t ignored_short = 0;
+  uint16_t ignored_long = 0;
+  uint16_t unique_bins = 0;
+  uint16_t hist[RX_ANALYSIS_BIN_COUNT]{};
+
+  for (uint16_t i = 0; i < this->rx_edge_count_; i++) {
+    const uint16_t pulse = this->rx_edges_[i];
+    if (pulse < RX_ANALYSIS_MIN_US) {
+      ignored_short++;
+      continue;
+    }
+    if (pulse > RX_ANALYSIS_MAX_US) {
+      ignored_long++;
+      continue;
+    }
+    const uint16_t norm = this->rx_normalize_pulse_(pulse);
+    const uint16_t bin = norm / RX_ANALYSIS_BIN_US;
+    if (bin < RX_ANALYSIS_BIN_COUNT) {
+      if (hist[bin] == 0) {
+        unique_bins++;
+      }
+      hist[bin]++;
+      filtered_count++;
+    }
+  }
+
+  const uint32_t fingerprint = this->rx_capture_fingerprint_();
+  this->rx_last_fingerprint_ = fingerprint;
+  this->rx_last_filtered_edges_ = filtered_count;
+  this->rx_last_unique_bins_ = unique_bins;
+
+  ESP_LOGI(TAG, "Capture #%u protocol analysis: fingerprint=0x%08X filtered=%u ignored_short=%u ignored_long=%u unique_bins=%u",
+           capture_no, fingerprint, filtered_count, ignored_short, ignored_long, unique_bins);
+
+  char stream[192];
+  int offset = snprintf(stream, sizeof(stream), "  normalized:");
+  uint8_t on_line = 0;
+  uint16_t emitted = 0;
+  for (uint16_t i = 0; i < this->rx_edge_count_; i++) {
+    const uint16_t norm = this->rx_normalize_pulse_(this->rx_edges_[i]);
+    if (norm == 0) {
+      continue;
+    }
+    const int written = snprintf(stream + offset, sizeof(stream) - offset, " %u", norm);
+    if (written <= 0 || written >= static_cast<int>(sizeof(stream) - offset) || ++on_line >= 16) {
+      ESP_LOGI(TAG, "%s", stream);
+      offset = snprintf(stream, sizeof(stream), "  normalized:");
+      on_line = 0;
+      if (written > 0 && written < static_cast<int>(sizeof(stream) - offset)) {
+        offset += snprintf(stream + offset, sizeof(stream) - offset, " %u", norm);
+        on_line = 1;
+      }
+    } else {
+      offset += written;
+    }
+    emitted++;
+    if (emitted >= RX_ANALYSIS_MAX_PRINTED_SYMBOLS) {
+      break;
+    }
+  }
+  if (on_line > 0) {
+    ESP_LOGI(TAG, "%s", stream);
+  }
+  if (filtered_count > RX_ANALYSIS_MAX_PRINTED_SYMBOLS) {
+    ESP_LOGI(TAG, "  normalized: ... truncated at %u of %u symbols", RX_ANALYSIS_MAX_PRINTED_SYMBOLS, filtered_count);
+  }
+
+  ESP_LOGI(TAG, "Capture #%u analysis dominant normalized buckets:", capture_no);
+  bool used[RX_ANALYSIS_BIN_COUNT]{};
+  for (uint8_t rank = 0; rank < 8; rank++) {
+    uint16_t best_bin = 0;
+    uint16_t best_count = 0;
+    for (uint16_t bin = 0; bin < RX_ANALYSIS_BIN_COUNT; bin++) {
+      if (!used[bin] && hist[bin] > best_count) {
+        best_count = hist[bin];
+        best_bin = bin;
+      }
+    }
+    if (best_count == 0) {
+      break;
+    }
+    used[best_bin] = true;
+    ESP_LOGI(TAG, "  #%u: %u us count=%u", rank + 1, best_bin * RX_ANALYSIS_BIN_US, best_count);
   }
 }
 
