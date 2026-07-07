@@ -81,6 +81,9 @@ static constexpr uint8_t PARTNUM = 0x30;
 static constexpr uint8_t VERSION = 0x31;
 static constexpr uint8_t RSSI = 0x34;
 static constexpr uint8_t MARCSTATE = 0x35;
+static constexpr uint8_t PKTSTATUS = 0x38;
+static constexpr uint8_t TXBYTES = 0x3A;
+static constexpr uint8_t RXBYTES = 0x3B;
 
 // SPI command bits
 static constexpr uint8_t READ_SINGLE = 0x80;

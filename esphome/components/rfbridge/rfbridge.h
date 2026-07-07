@@ -54,6 +54,8 @@ class RFBridgeComponent : public Component {
   uint8_t cc1101_version_{0xFF};
   void cc1101_reset_();
   void cc1101_configure_ook_async_rx_();
+  void cc1101_dump_registers_(const char *stage);
+  void cc1101_log_register_(const char *name, uint8_t addr, int expected = -1);
   void cc1101_enter_rx_();
   void cc1101_enter_idle_();
 

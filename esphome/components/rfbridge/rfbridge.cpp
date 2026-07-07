@@ -42,8 +42,13 @@ void RFBridgeComponent::setup() {
     return;
   }
 
+  this->cc1101_dump_registers_("post-reset/pre-config");
+
   this->cc1101_configure_ook_async_rx_();
+  this->cc1101_dump_registers_("post-config/pre-rx");
+
   this->cc1101_enter_rx_();
+  this->cc1101_dump_registers_("post-rx");
   this->cc1101_configured_ = true;
 
   this->rx_setup_();
@@ -159,6 +164,70 @@ void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
   ESP_LOGI(TAG, "  IOCFG2   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG2));
   ESP_LOGI(TAG, "  PKTCTRL0 = 0x%02X", this->cc1101_read_reg_(cc1101::PKTCTRL0));
 }
+
+void RFBridgeComponent::cc1101_log_register_(const char *name, uint8_t addr, int expected) {
+  const uint8_t value = this->cc1101_read_reg_(addr);
+  if (expected >= 0) {
+    ESP_LOGI(TAG, "  %-8s [0x%02X] = 0x%02X  expected=0x%02X  %s", name, addr, value, expected & 0xFF,
+             value == (expected & 0xFF) ? "OK" : "MISMATCH");
+  } else {
+    ESP_LOGI(TAG, "  %-8s [0x%02X] = 0x%02X", name, addr, value);
+  }
+}
+
+void RFBridgeComponent::cc1101_dump_registers_(const char *stage) {
+  ESP_LOGI(TAG, "CC1101 register dump (%s):", stage);
+  this->cc1101_log_register_("IOCFG2", cc1101::IOCFG2, cc1101::GDO_HIGH_Z);
+  this->cc1101_log_register_("IOCFG1", cc1101::IOCFG1);
+  this->cc1101_log_register_("IOCFG0", cc1101::IOCFG0, cc1101::GDO_SERIAL_DATA);
+  this->cc1101_log_register_("FIFOTHR", cc1101::FIFOTHR);
+  this->cc1101_log_register_("SYNC1", cc1101::SYNC1);
+  this->cc1101_log_register_("SYNC0", cc1101::SYNC0);
+  this->cc1101_log_register_("PKTLEN", cc1101::PKTLEN);
+  this->cc1101_log_register_("PKTCTRL1", cc1101::PKTCTRL1);
+  this->cc1101_log_register_("PKTCTRL0", cc1101::PKTCTRL0, cc1101::PKT_ASYNC_SERIAL);
+  this->cc1101_log_register_("ADDR", cc1101::ADDR);
+  this->cc1101_log_register_("CHANNR", cc1101::CHANNR);
+  this->cc1101_log_register_("FSCTRL1", cc1101::FSCTRL1, 0x06);
+  this->cc1101_log_register_("FSCTRL0", cc1101::FSCTRL0);
+  this->cc1101_log_register_("FREQ2", cc1101::FREQ2, 0x10);
+  this->cc1101_log_register_("FREQ1", cc1101::FREQ1, 0xB0);
+  this->cc1101_log_register_("FREQ0", cc1101::FREQ0, 0x71);
+  this->cc1101_log_register_("MDMCFG4", cc1101::MDMCFG4, 0xF5);
+  this->cc1101_log_register_("MDMCFG3", cc1101::MDMCFG3, 0x83);
+  this->cc1101_log_register_("MDMCFG2", cc1101::MDMCFG2, 0x30);
+  this->cc1101_log_register_("MDMCFG1", cc1101::MDMCFG1, 0x22);
+  this->cc1101_log_register_("MDMCFG0", cc1101::MDMCFG0, 0xF8);
+  this->cc1101_log_register_("DEVIATN", cc1101::DEVIATN);
+  this->cc1101_log_register_("MCSM2", cc1101::MCSM2);
+  this->cc1101_log_register_("MCSM1", cc1101::MCSM1);
+  this->cc1101_log_register_("MCSM0", cc1101::MCSM0, 0x18);
+  this->cc1101_log_register_("FOCCFG", cc1101::FOCCFG, 0x16);
+  this->cc1101_log_register_("BSCFG", cc1101::BSCFG);
+  this->cc1101_log_register_("AGCCTRL2", cc1101::AGCCTRL2, 0x04);
+  this->cc1101_log_register_("AGCCTRL1", cc1101::AGCCTRL1, 0x00);
+  this->cc1101_log_register_("AGCCTRL0", cc1101::AGCCTRL0, 0x91);
+  this->cc1101_log_register_("WOREVT1", cc1101::WOREVT1);
+  this->cc1101_log_register_("WOREVT0", cc1101::WOREVT0);
+  this->cc1101_log_register_("WORCTRL", cc1101::WORCTRL);
+  this->cc1101_log_register_("FREND1", cc1101::FREND1, 0x56);
+  this->cc1101_log_register_("FREND0", cc1101::FREND0, 0x11);
+  this->cc1101_log_register_("FSCAL3", cc1101::FSCAL3, 0xE9);
+  this->cc1101_log_register_("FSCAL2", cc1101::FSCAL2, 0x2A);
+  this->cc1101_log_register_("FSCAL1", cc1101::FSCAL1, 0x00);
+  this->cc1101_log_register_("FSCAL0", cc1101::FSCAL0, 0x1F);
+  this->cc1101_log_register_("TEST2", cc1101::TEST2, 0x81);
+  this->cc1101_log_register_("TEST1", cc1101::TEST1, 0x35);
+  this->cc1101_log_register_("TEST0", cc1101::TEST0, 0x09);
+
+  ESP_LOGI(TAG, "CC1101 status dump (%s):", stage);
+  ESP_LOGI(TAG, "  RSSI     [0x%02X] = 0x%02X (%d dBm)", cc1101::RSSI, this->cc1101_read_status_(cc1101::RSSI),
+           this->cc1101_read_rssi_dbm_());
+  ESP_LOGI(TAG, "  MARCSTATE[0x%02X] = 0x%02X", cc1101::MARCSTATE, this->cc1101_read_status_(cc1101::MARCSTATE));
+  ESP_LOGI(TAG, "  PKTSTATUS[0x%02X] = 0x%02X", cc1101::PKTSTATUS, this->cc1101_read_status_(cc1101::PKTSTATUS));
+  ESP_LOGI(TAG, "  RXBYTES  [0x%02X] = 0x%02X", cc1101::RXBYTES, this->cc1101_read_status_(cc1101::RXBYTES));
+}
+
 
 void RFBridgeComponent::cc1101_enter_rx_() {
   ESP_LOGI(TAG, "Entering CC1101 RX mode; listening for RF activity...");

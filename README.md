@@ -1,31 +1,31 @@
 # ESPHome RF Bridge
 
-ESPHome RF Bridge is a reusable ESPHome external component for CC1101-based 433 MHz RF work.
+Reusable ESPHome RF bridge foundation for CC1101-based 433 MHz devices.
 
-The project is intended to act as a transport layer for Home Assistant integrations and future RF protocol decoders. The first target protocol is the Outprize RV roof vent fan remote.
+## v0.4.0 Focus
 
-## Current status
+This release adds CC1101 register diagnostics. It is intended to verify that the ESPHome-native driver is programming the radio into the same effective mode as the earlier standalone diagnostic firmware.
 
-**v0.3.1 – RF Receive Pipeline**
+Expected healthy markers:
 
-Implemented:
+```text
+Firmware Version: 0.4.0
+CC1101 Detected: YES
+CC1101 Configured: YES
+CC1101 PARTNUM: 0x00
+CC1101 VERSION: 0x14
+RX Enabled: YES
+```
 
-- ESPHome external component loading from GitHub
-- Native bit-banged SPI for CC1101
-- CC1101 detection using PARTNUM/VERSION registers
-- 433.92 MHz OOK async RX configuration
-- GDO0 RF activity polling
-- Packet candidate edge counting and duration logging
-- Basic receive diagnostics
+The log will also include register dumps for:
 
-Not yet implemented:
+- post-reset / pre-config
+- post-config / pre-RX
+- post-RX
 
-- Protocol decoding
-- Outprize packet reconstruction
-- RF transmit
-- Home Assistant service/actions
+No remote button press is required for this release.
 
-## Example YAML
+## ESPHome YAML
 
 ```yaml
 external_components:
@@ -44,30 +44,3 @@ rfbridge:
   miso_pin: GPIO19
   gdo0_pin: GPIO4
 ```
-
-## Expected v0.3.1 logs
-
-On startup:
-
-```text
-Initializing CC1101 with native bit-banged SPI...
-CC1101 reset complete
-Detected CC1101 (PARTNUM=0x00 VERSION=0x14)
-Configuring CC1101 for 433.92 MHz OOK async RX...
-Entering CC1101 RX mode; listening for RF activity...
-RX pipeline ready: polling GDO0 for async OOK edges
-```
-
-When RF activity is detected:
-
-```text
-RF packet candidate #1: edges=72 duration=25000 us rssi=-44 dBm
-```
-
-
-Current development version: **v0.3.3**
-
-
-## v0.3.3 Notes
-
-This release tunes the raw RF receive pipeline so sparse background noise does not accumulate into fake packets. It raises packet thresholds toward the expected Outprize capture shape and adds gap statistics for each packet candidate.
