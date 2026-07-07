@@ -1,15 +1,11 @@
 # Changelog
 
-## v0.4.0 – CC1101 Register Diagnostics
+## v0.4.1 – Match Known-Good Sniffer Profile
 
-Adds detailed CC1101 register diagnostics to support receive-mode bring-up.
+- Updates the CC1101 modem configuration to better match the working standalone diagnostic sniffer.
+- Changes MDMCFG4/MDMCFG3 to the 2.0 kbps / ~58 kHz RX bandwidth profile used by the original RadioLib capture firmware.
+- Keeps IOCFG0=0x0D, IOCFG2=0x2E, and PKTCTRL0=0x32 for asynchronous serial data on GDO0.
+- Updates register diagnostics expected values to match the new profile.
+- Keeps version/build metadata and receive diagnostics from v0.4.0.
 
-Changes:
-- Adds full CC1101 configuration register dumps at multiple startup stages.
-- Adds expected-value comparisons for key registers used by the current 433.92 MHz OOK async RX profile.
-- Adds status register logging including RSSI, MARCSTATE, PKTSTATUS, and RXBYTES.
-- Keeps v0.3.x firmware metadata, CC1101 detection, and receive pipeline diagnostics.
-
-Notes:
-- This release does not require pressing any RF remote.
-- The goal is to compare the native ESPHome CC1101 configuration against the previously working diagnostic firmware / RadioLib-derived setup.
+No remote button press is required for basic bring-up; this release prepares the receiver for the next real Outprize remote test.

@@ -126,6 +126,7 @@ void RFBridgeComponent::cc1101_reset_() {
 
 void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
   ESP_LOGI(TAG, "Configuring CC1101 for 433.92 MHz OOK async RX...");
+  ESP_LOGI(TAG, "Applying known-good sniffer profile: OOK, 2.0 kbps, 58 kHz RX bandwidth, direct async output");
 
   this->cc1101_enter_idle_();
 
@@ -138,8 +139,12 @@ void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
   this->cc1101_write_reg_(cc1101::PKTCTRL0, cc1101::PKT_ASYNC_SERIAL);
 
   this->cc1101_write_reg_(cc1101::FSCTRL1, 0x06);
-  this->cc1101_write_reg_(cc1101::MDMCFG4, 0xF5);
-  this->cc1101_write_reg_(cc1101::MDMCFG3, 0x83);
+  // Match the known-good diagnostic sniffer configuration:
+  //   setBitRate(2.0) + setRxBandwidth(58.0)
+  // CHANBW_E=3, CHANBW_M=3, DRATE_E=6 => MDMCFG4=0xF6
+  // DRATE_M=0x43 gives ~2.0 kbps with a 26 MHz crystal.
+  this->cc1101_write_reg_(cc1101::MDMCFG4, 0xF6);
+  this->cc1101_write_reg_(cc1101::MDMCFG3, 0x43);
   this->cc1101_write_reg_(cc1101::MDMCFG2, 0x30);
   this->cc1101_write_reg_(cc1101::MDMCFG1, 0x22);
   this->cc1101_write_reg_(cc1101::MDMCFG0, 0xF8);
@@ -193,8 +198,8 @@ void RFBridgeComponent::cc1101_dump_registers_(const char *stage) {
   this->cc1101_log_register_("FREQ2", cc1101::FREQ2, 0x10);
   this->cc1101_log_register_("FREQ1", cc1101::FREQ1, 0xB0);
   this->cc1101_log_register_("FREQ0", cc1101::FREQ0, 0x71);
-  this->cc1101_log_register_("MDMCFG4", cc1101::MDMCFG4, 0xF5);
-  this->cc1101_log_register_("MDMCFG3", cc1101::MDMCFG3, 0x83);
+  this->cc1101_log_register_("MDMCFG4", cc1101::MDMCFG4, 0xF6);
+  this->cc1101_log_register_("MDMCFG3", cc1101::MDMCFG3, 0x43);
   this->cc1101_log_register_("MDMCFG2", cc1101::MDMCFG2, 0x30);
   this->cc1101_log_register_("MDMCFG1", cc1101::MDMCFG1, 0x22);
   this->cc1101_log_register_("MDMCFG0", cc1101::MDMCFG0, 0xF8);
