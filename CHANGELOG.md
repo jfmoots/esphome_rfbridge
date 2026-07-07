@@ -1,19 +1,34 @@
 # Changelog
 
+## v0.2.1 - RFBridge Pin Schema Sync
+
+Fixes the ESPHome YAML validation schema for the native bit-banged SPI implementation introduced in v0.2.0.
+
+Changes:
+- Adds `sck_pin`, `mosi_pin`, and `miso_pin` to the RFBridge ESPHome config schema.
+- Wires those pins into the RFBridge C++ component via `set_sck_pin`, `set_mosi_pin`, and `set_miso_pin`.
+- Keeps `gdo0_pin` optional and `gdo2_pin` optional.
+- Leaves the `spi:` block unused; RFBridge owns the CC1101 bit-banged SPI pins directly.
+
+Expected YAML:
+
+```yaml
+rfbridge:
+  cs_pin: GPIO5
+  sck_pin: GPIO18
+  mosi_pin: GPIO23
+  miso_pin: GPIO19
+  gdo0_pin: GPIO4
+```
+
 ## v0.2.0 - CC1101 Bring-Up
 
-- Adds first native CC1101 bring-up path.
-- Reads and logs CC1101 `PARTNUM` and `VERSION` registers.
-- Configures known-good 433.92 MHz OOK async RX baseline values from the diagnostic firmware.
-- Avoids ESPHome SPI bus-lock startup crashes by using a small GPIO bit-banged SPI layer for initial bring-up.
-- Keeps TX and packet decode as placeholders for future milestones.
+Adds the first native CC1101 bring-up path for RF Bridge.
 
-## v0.1.3 - Stable ESPHome Foundation
+Changes:
+- Adds CC1101 PARTNUM/VERSION register reads.
+- Adds first-pass 433.92 MHz OOK async RX configuration.
+- Uses a small GPIO bit-banged SPI layer to avoid the ESPHome/ESP-IDF SPI bus-lock crash seen in v0.1.x.
+- Keeps RF transmit and packet decoding as placeholders for future milestones.
+- Adds CC1101 bring-up documentation and example YAML.
 
-- Stable ESPHome baseline with API, OTA, web server, and logging.
-- RF functionality intentionally disabled pending CC1101 bring-up.
-
-## v0.1.1 - Native CC1101 Foundation
-
-- Removed RadioLib dependency from the ESPHome component path.
-- Started native CC1101 driver foundation.

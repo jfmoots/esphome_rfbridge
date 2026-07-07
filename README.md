@@ -6,7 +6,7 @@ The project is intended to act as a hardware appliance for Home Assistant integr
 
 ## Current status
 
-v0.2.0 is a CC1101 bring-up release. It should boot in ESPHome, initialize the CC1101, read `PARTNUM` and `VERSION`, and apply the first Outprize-compatible 433.92 MHz OOK async RX register configuration.
+v0.2.1 is a CC1101 bring-up schema fix release. It should boot in ESPHome, validate the bit-banged SPI pin YAML, initialize the CC1101, read `PARTNUM` and `VERSION`, and apply the first Outprize-compatible 433.92 MHz OOK async RX register configuration.
 
 Transmit, packet capture, and protocol decoding are not implemented yet.
 
