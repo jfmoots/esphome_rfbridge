@@ -8,7 +8,7 @@ namespace rfbridge {
 static const char *const TAG = "rfbridge";
 
 void RFBridgeComponent::setup() {
-  ESP_LOGCONFIG(TAG, "Setting up RF Bridge v0.2.0...");
+  ESP_LOGI(TAG, "Setting up RF Bridge v0.2.2...");
 
   if (this->cs_pin_ == nullptr || this->sck_pin_ == nullptr || this->mosi_pin_ == nullptr || this->miso_pin_ == nullptr) {
     ESP_LOGE(TAG, "Required SPI GPIO pins are not configured");
@@ -33,14 +33,15 @@ void RFBridgeComponent::setup() {
   }
 
   if (!this->cc1101_begin_()) {
-    this->mark_failed();
+    ESP_LOGE(TAG, "CC1101 bring-up failed; RF functions disabled, but ESPHome will remain online");
     return;
   }
 
   this->cc1101_configure_ook_async_rx_();
   this->cc1101_enter_rx_();
+  this->cc1101_configured_ = true;
 
-  ESP_LOGCONFIG(TAG, "RF Bridge setup complete");
+  ESP_LOGI(TAG, "RF Bridge setup complete; CC1101 is in async RX mode");
 }
 
 void RFBridgeComponent::loop() {
@@ -55,23 +56,33 @@ void RFBridgeComponent::dump_config() {
   LOG_PIN("  MISO Pin: ", this->miso_pin_);
   LOG_PIN("  GDO0 Pin: ", this->gdo0_pin_);
   LOG_PIN("  GDO2 Pin: ", this->gdo2_pin_);
+  ESP_LOGCONFIG(TAG, "  CC1101 Detected: %s", YESNO(this->cc1101_detected_));
+  ESP_LOGCONFIG(TAG, "  CC1101 Configured: %s", YESNO(this->cc1101_configured_));
+  ESP_LOGCONFIG(TAG, "  CC1101 PARTNUM: 0x%02X", this->cc1101_partnum_);
+  ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
 }
 
 bool RFBridgeComponent::cc1101_begin_() {
-  ESP_LOGCONFIG(TAG, "Initializing CC1101 with native bit-banged SPI...");
+  ESP_LOGI(TAG, "Initializing CC1101 with native bit-banged SPI...");
 
   this->cc1101_reset_();
 
-  const uint8_t partnum = this->cc1101_read_status_(cc1101::PARTNUM);
-  const uint8_t version = this->cc1101_read_status_(cc1101::VERSION);
+  this->cc1101_partnum_ = this->cc1101_read_status_(cc1101::PARTNUM);
+  this->cc1101_version_ = this->cc1101_read_status_(cc1101::VERSION);
 
-  ESP_LOGCONFIG(TAG, "CC1101 PARTNUM=0x%02X VERSION=0x%02X", partnum, version);
+  ESP_LOGI(TAG, "CC1101 PARTNUM=0x%02X VERSION=0x%02X", this->cc1101_partnum_, this->cc1101_version_);
 
-  if (version == 0x00 || version == 0xFF) {
+  // Common CC1101 values are PARTNUM=0x00 and VERSION=0x14. Some clones report
+  // different VERSION values, so only treat all-zero/all-ones as a bus failure.
+  if ((this->cc1101_partnum_ == 0x00 && this->cc1101_version_ == 0x00) ||
+      (this->cc1101_partnum_ == 0xFF && this->cc1101_version_ == 0xFF)) {
+    this->cc1101_detected_ = false;
     ESP_LOGE(TAG, "CC1101 did not respond correctly. Check power, CS, and SPI wiring.");
     return false;
   }
 
+  this->cc1101_detected_ = true;
+  ESP_LOGI(TAG, "CC1101 detected");
   return true;
 }
 
@@ -89,7 +100,7 @@ void RFBridgeComponent::cc1101_reset_() {
 }
 
 void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
-  ESP_LOGCONFIG(TAG, "Configuring CC1101 for 433.92 MHz OOK async RX...");
+  ESP_LOGI(TAG, "Configuring CC1101 for 433.92 MHz OOK async RX...");
 
   this->cc1101_enter_idle_();
 
@@ -124,9 +135,9 @@ void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
 
   this->cc1101_write_patable_(0xC0);
 
-  ESP_LOGCONFIG(TAG, "  IOCFG0   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG0));
-  ESP_LOGCONFIG(TAG, "  IOCFG2   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG2));
-  ESP_LOGCONFIG(TAG, "  PKTCTRL0 = 0x%02X", this->cc1101_read_reg_(cc1101::PKTCTRL0));
+  ESP_LOGI(TAG, "  IOCFG0   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG0));
+  ESP_LOGI(TAG, "  IOCFG2   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG2));
+  ESP_LOGI(TAG, "  PKTCTRL0 = 0x%02X", this->cc1101_read_reg_(cc1101::PKTCTRL0));
 }
 
 void RFBridgeComponent::cc1101_enter_rx_() {

@@ -48,6 +48,10 @@ class RFBridgeComponent : public Component {
   GPIOPin *gdo2_pin_{nullptr};
 
   bool cc1101_begin_();
+  bool cc1101_detected_{false};
+  bool cc1101_configured_{false};
+  uint8_t cc1101_partnum_{0xFF};
+  uint8_t cc1101_version_{0xFF};
   void cc1101_reset_();
   void cc1101_configure_ook_async_rx_();
   void cc1101_enter_rx_();
