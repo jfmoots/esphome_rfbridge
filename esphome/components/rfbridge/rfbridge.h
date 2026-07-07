@@ -4,7 +4,6 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
-#include "esphome/components/spi/spi.h"
 
 namespace esphome {
 namespace rfbridge {
@@ -21,14 +20,16 @@ enum class OutprizeVentCommand : uint8_t {
   STOP = 0x0C,
 };
 
-class RFBridgeComponent : public Component,
-                          public spi::SPIDevice<spi::BIT_ORDER_MSB_FIRST, spi::CLOCK_POLARITY_LOW,
-                                                spi::CLOCK_PHASE_LEADING, spi::DATA_RATE_4MHZ> {
+class RFBridgeComponent : public Component {
  public:
   void setup() override;
   void loop() override;
   void dump_config() override;
 
+  void set_cs_pin(GPIOPin *pin) { this->cs_pin_ = pin; }
+  void set_sck_pin(GPIOPin *pin) { this->sck_pin_ = pin; }
+  void set_mosi_pin(GPIOPin *pin) { this->mosi_pin_ = pin; }
+  void set_miso_pin(GPIOPin *pin) { this->miso_pin_ = pin; }
   void set_gdo0_pin(GPIOPin *pin) { this->gdo0_pin_ = pin; }
   void set_gdo2_pin(GPIOPin *pin) { this->gdo2_pin_ = pin; }
 
@@ -39,6 +40,10 @@ class RFBridgeComponent : public Component,
                      OutprizeVentCommand vent_command);
 
  protected:
+  GPIOPin *cs_pin_{nullptr};
+  GPIOPin *sck_pin_{nullptr};
+  GPIOPin *mosi_pin_{nullptr};
+  GPIOPin *miso_pin_{nullptr};
   GPIOPin *gdo0_pin_{nullptr};
   GPIOPin *gdo2_pin_{nullptr};
 
@@ -53,6 +58,12 @@ class RFBridgeComponent : public Component,
   uint8_t cc1101_read_status_(uint8_t addr);
   uint8_t cc1101_strobe_(uint8_t strobe);
   void cc1101_write_patable_(uint8_t value);
+
+  void spi_select_();
+  void spi_deselect_();
+  uint8_t spi_transfer_byte_(uint8_t value);
+  void spi_write_byte_(uint8_t value) { (void) this->spi_transfer_byte_(value); }
+  uint8_t spi_read_byte_() { return this->spi_transfer_byte_(0x00); }
 
   uint8_t outprize_speed_code_(uint8_t speed_percent) const;
   bool transmit_low24_(uint32_t remote_id, uint32_t low24);

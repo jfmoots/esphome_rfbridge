@@ -8,9 +8,22 @@ namespace rfbridge {
 static const char *const TAG = "rfbridge";
 
 void RFBridgeComponent::setup() {
-  ESP_LOGCONFIG(TAG, "Setting up RF Bridge...");
+  ESP_LOGCONFIG(TAG, "Setting up RF Bridge v0.2.0...");
 
-  this->spi_setup();
+  if (this->cs_pin_ == nullptr || this->sck_pin_ == nullptr || this->mosi_pin_ == nullptr || this->miso_pin_ == nullptr) {
+    ESP_LOGE(TAG, "Required SPI GPIO pins are not configured");
+    this->mark_failed();
+    return;
+  }
+
+  this->cs_pin_->setup();
+  this->sck_pin_->setup();
+  this->mosi_pin_->setup();
+  this->miso_pin_->setup();
+
+  this->cs_pin_->digital_write(true);
+  this->sck_pin_->digital_write(false);
+  this->mosi_pin_->digital_write(false);
 
   if (this->gdo0_pin_ != nullptr) {
     this->gdo0_pin_->setup();
@@ -31,17 +44,21 @@ void RFBridgeComponent::setup() {
 }
 
 void RFBridgeComponent::loop() {
-  // Receive/decode path will be added after the CC1101 foundation is validated.
+  // Receive/decode path will be added after CC1101 bring-up is validated.
 }
 
 void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "RF Bridge");
+  LOG_PIN("  CS Pin: ", this->cs_pin_);
+  LOG_PIN("  SCK Pin: ", this->sck_pin_);
+  LOG_PIN("  MOSI Pin: ", this->mosi_pin_);
+  LOG_PIN("  MISO Pin: ", this->miso_pin_);
   LOG_PIN("  GDO0 Pin: ", this->gdo0_pin_);
   LOG_PIN("  GDO2 Pin: ", this->gdo2_pin_);
 }
 
 bool RFBridgeComponent::cc1101_begin_() {
-  ESP_LOGCONFIG(TAG, "Initializing CC1101 without RadioLib...");
+  ESP_LOGCONFIG(TAG, "Initializing CC1101 with native bit-banged SPI...");
 
   this->cc1101_reset_();
 
@@ -50,8 +67,6 @@ bool RFBridgeComponent::cc1101_begin_() {
 
   ESP_LOGCONFIG(TAG, "CC1101 PARTNUM=0x%02X VERSION=0x%02X", partnum, version);
 
-  // Common CC1101 modules usually report VERSION 0x14 or 0x04.
-  // Don't hard-fail on unusual clones yet; just warn loudly.
   if (version == 0x00 || version == 0xFF) {
     ESP_LOGE(TAG, "CC1101 did not respond correctly. Check power, CS, and SPI wiring.");
     return false;
@@ -61,15 +76,13 @@ bool RFBridgeComponent::cc1101_begin_() {
 }
 
 void RFBridgeComponent::cc1101_reset_() {
-  // TI reset sequence: CS high -> low -> high, then SRES strobe.
-  // ESPHome's SPIDevice::enable()/disable() must always be paired.
-  // v0.1.1 called disable() before any enable(), which crashes under ESP-IDF's
-  // SPI bus lock tracking. Keep the first CS-high delay implicit, then perform
-  // one valid enable/disable pair before sending SRES.
+  // CC1101 reset sequence using GPIO only. This intentionally avoids ESPHome's
+  // SPI bus-lock path until the bridge has its own stable low-level driver.
+  this->spi_deselect_();
   delayMicroseconds(5);
-  this->enable();
+  this->spi_select_();
   delayMicroseconds(10);
-  this->disable();
+  this->spi_deselect_();
   delayMicroseconds(40);
   this->cc1101_strobe_(cc1101::SRES);
   delay(1);
@@ -80,23 +93,18 @@ void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
 
   this->cc1101_enter_idle_();
 
-  // Frequency: 433.92 MHz with a 26 MHz crystal.
-  // FREQ = f_carrier * 2^16 / f_xtal = 0x10B071.
   this->cc1101_write_reg_(cc1101::FREQ2, 0x10);
   this->cc1101_write_reg_(cc1101::FREQ1, 0xB0);
   this->cc1101_write_reg_(cc1101::FREQ0, 0x71);
 
-  // Async serial mode on GDO0. These three values were proven in the diagnostic firmware.
   this->cc1101_write_reg_(cc1101::IOCFG0, cc1101::GDO_SERIAL_DATA);
   this->cc1101_write_reg_(cc1101::IOCFG2, cc1101::GDO_HIGH_Z);
   this->cc1101_write_reg_(cc1101::PKTCTRL0, cc1101::PKT_ASYNC_SERIAL);
 
-  // Minimal OOK/ASK-ish baseline. These are deliberately conservative first-pass settings.
-  // We will tune them against the known-good diagnostic firmware logs if needed.
   this->cc1101_write_reg_(cc1101::FSCTRL1, 0x06);
-  this->cc1101_write_reg_(cc1101::MDMCFG4, 0xF5);  // ~58 kHz channel BW, low data rate exponent
-  this->cc1101_write_reg_(cc1101::MDMCFG3, 0x83);  // ~2 kbaud data rate mantissa
-  this->cc1101_write_reg_(cc1101::MDMCFG2, 0x30);  // ASK/OOK, no sync filtering
+  this->cc1101_write_reg_(cc1101::MDMCFG4, 0xF5);
+  this->cc1101_write_reg_(cc1101::MDMCFG3, 0x83);
+  this->cc1101_write_reg_(cc1101::MDMCFG2, 0x30);
   this->cc1101_write_reg_(cc1101::MDMCFG1, 0x22);
   this->cc1101_write_reg_(cc1101::MDMCFG0, 0xF8);
   this->cc1101_write_reg_(cc1101::MCSM0, 0x18);
@@ -129,50 +137,67 @@ void RFBridgeComponent::cc1101_enter_rx_() {
 void RFBridgeComponent::cc1101_enter_idle_() { this->cc1101_strobe_(cc1101::SIDLE); }
 
 void RFBridgeComponent::cc1101_write_reg_(uint8_t addr, uint8_t value) {
-  this->enable();
-  delayMicroseconds(5);
-  this->write_byte(addr);
-  this->write_byte(value);
-  delayMicroseconds(5);
-  this->disable();
+  this->spi_select_();
+  this->spi_write_byte_(addr);
+  this->spi_write_byte_(value);
+  this->spi_deselect_();
 }
 
 uint8_t RFBridgeComponent::cc1101_read_reg_(uint8_t addr) {
-  this->enable();
-  delayMicroseconds(5);
-  this->write_byte(addr | cc1101::READ_SINGLE);
-  const uint8_t value = this->read_byte();
-  delayMicroseconds(5);
-  this->disable();
+  this->spi_select_();
+  this->spi_write_byte_(addr | cc1101::READ_SINGLE);
+  const uint8_t value = this->spi_read_byte_();
+  this->spi_deselect_();
   return value;
 }
 
 uint8_t RFBridgeComponent::cc1101_read_status_(uint8_t addr) {
-  this->enable();
-  delayMicroseconds(5);
-  this->write_byte(addr | cc1101::READ_BURST);
-  const uint8_t value = this->read_byte();
-  delayMicroseconds(5);
-  this->disable();
+  this->spi_select_();
+  this->spi_write_byte_(addr | cc1101::READ_BURST);
+  const uint8_t value = this->spi_read_byte_();
+  this->spi_deselect_();
   return value;
 }
 
 uint8_t RFBridgeComponent::cc1101_strobe_(uint8_t strobe) {
-  this->enable();
-  delayMicroseconds(5);
-  const uint8_t status = this->transfer_byte(strobe);
-  delayMicroseconds(5);
-  this->disable();
+  this->spi_select_();
+  const uint8_t status = this->spi_transfer_byte_(strobe);
+  this->spi_deselect_();
   return status;
 }
 
 void RFBridgeComponent::cc1101_write_patable_(uint8_t value) {
-  this->enable();
-  delayMicroseconds(5);
-  this->write_byte(cc1101::PATABLE);
-  this->write_byte(value);
-  delayMicroseconds(5);
-  this->disable();
+  this->spi_select_();
+  this->spi_write_byte_(cc1101::PATABLE);
+  this->spi_write_byte_(value);
+  this->spi_deselect_();
+}
+
+void RFBridgeComponent::spi_select_() {
+  this->cs_pin_->digital_write(false);
+  delayMicroseconds(2);
+}
+
+void RFBridgeComponent::spi_deselect_() {
+  this->cs_pin_->digital_write(true);
+  delayMicroseconds(2);
+}
+
+uint8_t RFBridgeComponent::spi_transfer_byte_(uint8_t value) {
+  uint8_t result = 0;
+  for (int8_t bit = 7; bit >= 0; bit--) {
+    this->mosi_pin_->digital_write((value >> bit) & 0x01);
+    delayMicroseconds(1);
+    this->sck_pin_->digital_write(true);
+    delayMicroseconds(1);
+    result <<= 1;
+    if (this->miso_pin_->digital_read()) {
+      result |= 0x01;
+    }
+    this->sck_pin_->digital_write(false);
+    delayMicroseconds(1);
+  }
+  return result;
 }
 
 uint8_t RFBridgeComponent::outprize_speed_code_(uint8_t speed_percent) const {
@@ -215,7 +240,6 @@ bool RFBridgeComponent::send_outprize(uint32_t remote_id, uint8_t speed_percent,
 }
 
 bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24) {
-  // TODO: implement OOK transmit using CC1101 async/direct TX.
   ESP_LOGW(TAG, "TX placeholder only; CC1101 transmit not implemented yet. remote=0x%06X low24=0x%06X",
            remote_id & 0xFFFFFF, low24 & 0xFFFFFF);
   return false;
