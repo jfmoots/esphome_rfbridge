@@ -53,3 +53,13 @@ Do not add RadioLib to `platformio_options`. The bridge is being implemented wit
 ## Status
 
 Early development. The Outprize protocol has been reverse engineered. The current component initializes the CC1101 directly over ESPHome SPI and logs basic radio identity/configuration. RF transmit and receive are next.
+
+## Release Notes
+
+### v0.1.2 - SPI Bus Lock Crash Fix
+
+Fixes an ESPHome boot-loop caused by an unpaired SPI `disable()` call during the CC1101 reset sequence. The RF Bridge now uses paired ESPHome SPI transactions during startup, avoiding the ESP-IDF `spi_device_release_bus` assertion.
+
+### v0.1.1 - Native CC1101 Foundation
+
+Removed RadioLib from the ESPHome component path and began the native CC1101 driver foundation.

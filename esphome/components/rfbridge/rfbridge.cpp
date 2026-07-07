@@ -62,7 +62,10 @@ bool RFBridgeComponent::cc1101_begin_() {
 
 void RFBridgeComponent::cc1101_reset_() {
   // TI reset sequence: CS high -> low -> high, then SRES strobe.
-  this->disable();
+  // ESPHome's SPIDevice::enable()/disable() must always be paired.
+  // v0.1.1 called disable() before any enable(), which crashes under ESP-IDF's
+  // SPI bus lock tracking. Keep the first CS-high delay implicit, then perform
+  // one valid enable/disable pair before sending SRES.
   delayMicroseconds(5);
   this->enable();
   delayMicroseconds(10);
