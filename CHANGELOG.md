@@ -1,6 +1,15 @@
 # Changelog
 
-## v0.3.0 - RF Receive Pipeline
+## v0.3.1 - Version Logging
+
+- Adds `version.h` with a single RFBridge firmware version constant.
+- Logs the RFBridge version during setup.
+- Reports the RFBridge firmware version in `dump_config()`.
+- Keeps the v0.3.0 receive pipeline unchanged.
+
+# Changelog
+
+## v0.3.1 - RF Receive Pipeline
 
 - Adds first RF receive pipeline for CC1101 async OOK mode.
 - Adds clearer CC1101 startup logging.

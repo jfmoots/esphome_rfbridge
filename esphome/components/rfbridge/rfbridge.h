@@ -62,12 +62,39 @@ class RFBridgeComponent : public Component {
   uint8_t cc1101_read_status_(uint8_t addr);
   uint8_t cc1101_strobe_(uint8_t strobe);
   void cc1101_write_patable_(uint8_t value);
+  int16_t cc1101_read_rssi_dbm_();
 
   void spi_select_();
   void spi_deselect_();
   uint8_t spi_transfer_byte_(uint8_t value);
   void spi_write_byte_(uint8_t value) { (void) this->spi_transfer_byte_(value); }
   uint8_t spi_read_byte_() { return this->spi_transfer_byte_(0x00); }
+
+  void rx_setup_();
+  void rx_poll_();
+  void rx_record_edge_(uint32_t now_us, bool level);
+  void rx_finish_packet_(uint32_t now_us);
+  void rx_reset_packet_(uint32_t now_us, bool level);
+
+  static constexpr uint16_t RX_MAX_EDGES = 160;
+  static constexpr uint32_t RX_PACKET_GAP_US = 6000;
+  static constexpr uint32_t RX_MIN_PACKET_US = 3000;
+  static constexpr uint16_t RX_MIN_EDGES = 12;
+
+  bool rx_enabled_{false};
+  bool rx_have_level_{false};
+  bool rx_last_level_{false};
+  uint32_t rx_last_edge_us_{0};
+  uint32_t rx_packet_start_us_{0};
+  uint32_t rx_last_activity_log_ms_{0};
+  uint16_t rx_edge_count_{0};
+  uint16_t rx_overruns_{0};
+  uint32_t rx_packets_seen_{0};
+  uint32_t rx_edges_seen_{0};
+  uint32_t rx_last_packet_duration_us_{0};
+  uint16_t rx_last_packet_edges_{0};
+  int16_t rx_last_rssi_dbm_{0};
+  uint16_t rx_edges_[RX_MAX_EDGES]{};
 
   uint8_t outprize_speed_code_(uint8_t speed_percent) const;
   bool transmit_low24_(uint32_t remote_id, uint32_t low24);

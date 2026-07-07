@@ -1,20 +1,40 @@
 # ESPHome RF Bridge
 
-`esphome_rfbridge` is a reusable ESPHome RF transport layer for CC1101-based 433 MHz devices.
+ESPHome RF Bridge is a reusable ESPHome external component for CC1101-based 433 MHz RF work.
 
-The project is intended to act as a hardware appliance for Home Assistant integrations. It should own the RF hardware, while Home Assistant integrations own device-specific user models such as fans, lights, locks, and switches.
+The project is intended to act as a transport layer for Home Assistant integrations and future RF protocol decoders. The first target protocol is the Outprize RV roof vent fan remote.
 
 ## Current status
 
-v0.2.2 is a CC1101 bring-up schema fix release. It should boot in ESPHome, validate the bit-banged SPI pin YAML, initialize the CC1101, read `PARTNUM` and `VERSION`, and apply the first Outprize-compatible 433.92 MHz OOK async RX register configuration.
+**v0.3.1 – RF Receive Pipeline**
 
-Transmit, packet capture, and protocol decoding are not implemented yet.
+Implemented:
 
-## Example
+- ESPHome external component loading from GitHub
+- Native bit-banged SPI for CC1101
+- CC1101 detection using PARTNUM/VERSION registers
+- 433.92 MHz OOK async RX configuration
+- GDO0 RF activity polling
+- Packet candidate edge counting and duration logging
+- Basic receive diagnostics
+
+Not yet implemented:
+
+- Protocol decoding
+- Outprize packet reconstruction
+- RF transmit
+- Home Assistant service/actions
+
+## Example YAML
 
 ```yaml
 external_components:
-  - source: github://jfmoots/esphome_rfbridge
+  - source:
+      type: git
+      url: https://github.com/jfmoots/esphome_rfbridge
+      ref: main
+      path: esphome/components
+    refresh: 0s
     components: [rfbridge]
 
 rfbridge:
@@ -25,9 +45,21 @@ rfbridge:
   gdo0_pin: GPIO4
 ```
 
-GPIO5 is a strapping pin on ESP32. It worked during development, but future hardware builds should consider moving CS to a non-strapping GPIO.
+## Expected v0.3.1 logs
 
+On startup:
 
-## v0.2.2 – CC1101 Bring-Up Logging
+```text
+Initializing CC1101 with native bit-banged SPI...
+CC1101 reset complete
+Detected CC1101 (PARTNUM=0x00 VERSION=0x14)
+Configuring CC1101 for 433.92 MHz OOK async RX...
+Entering CC1101 RX mode; listening for RF activity...
+RX pipeline ready: polling GDO0 for async OOK edges
+```
 
-This release adds visible CC1101 bring-up status in the ESPHome logs and keeps the bridge online if the CC1101 is not detected.
+When RF activity is detected:
+
+```text
+RF packet candidate #1: edges=72 duration=25000 us rssi=-44 dBm
+```

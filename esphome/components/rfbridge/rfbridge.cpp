@@ -1,5 +1,6 @@
 #include "rfbridge.h"
 #include "cc1101_regs.h"
+#include "version.h"
 #include "esphome/core/log.h"
 
 namespace esphome {
@@ -8,7 +9,9 @@ namespace rfbridge {
 static const char *const TAG = "rfbridge";
 
 void RFBridgeComponent::setup() {
-  ESP_LOGI(TAG, "Setting up RF Bridge v0.2.2...");
+  ESP_LOGI(TAG, "======================================");
+  ESP_LOGI(TAG, "ESPHome RF Bridge v%s", RFBRIDGE_VERSION);
+  ESP_LOGI(TAG, "======================================");
 
   if (this->cs_pin_ == nullptr || this->sck_pin_ == nullptr || this->mosi_pin_ == nullptr || this->miso_pin_ == nullptr) {
     ESP_LOGE(TAG, "Required SPI GPIO pins are not configured");
@@ -41,15 +44,18 @@ void RFBridgeComponent::setup() {
   this->cc1101_enter_rx_();
   this->cc1101_configured_ = true;
 
-  ESP_LOGI(TAG, "RF Bridge setup complete; CC1101 is in async RX mode");
+  this->rx_setup_();
+
+  ESP_LOGI(TAG, "RF Bridge setup complete; CC1101 is in async RX mode and listening");
 }
 
 void RFBridgeComponent::loop() {
-  // Receive/decode path will be added after CC1101 bring-up is validated.
+  this->rx_poll_();
 }
 
 void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "RF Bridge");
+  ESP_LOGCONFIG(TAG, "  Firmware Version: %s", RFBRIDGE_VERSION);
   LOG_PIN("  CS Pin: ", this->cs_pin_);
   LOG_PIN("  SCK Pin: ", this->sck_pin_);
   LOG_PIN("  MOSI Pin: ", this->mosi_pin_);
@@ -60,12 +66,19 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 Configured: %s", YESNO(this->cc1101_configured_));
   ESP_LOGCONFIG(TAG, "  CC1101 PARTNUM: 0x%02X", this->cc1101_partnum_);
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
+  ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
+  ESP_LOGCONFIG(TAG, "  RX Packets Seen: %u", this->rx_packets_seen_);
+  ESP_LOGCONFIG(TAG, "  RX Edges Seen: %u", this->rx_edges_seen_);
+  ESP_LOGCONFIG(TAG, "  RX Overruns: %u", this->rx_overruns_);
+  ESP_LOGCONFIG(TAG, "  Last Packet: %u edges, %u us, RSSI %d dBm", this->rx_last_packet_edges_,
+                this->rx_last_packet_duration_us_, this->rx_last_rssi_dbm_);
 }
 
 bool RFBridgeComponent::cc1101_begin_() {
   ESP_LOGI(TAG, "Initializing CC1101 with native bit-banged SPI...");
 
   this->cc1101_reset_();
+  ESP_LOGI(TAG, "CC1101 reset complete");
 
   this->cc1101_partnum_ = this->cc1101_read_status_(cc1101::PARTNUM);
   this->cc1101_version_ = this->cc1101_read_status_(cc1101::VERSION);
@@ -82,7 +95,7 @@ bool RFBridgeComponent::cc1101_begin_() {
   }
 
   this->cc1101_detected_ = true;
-  ESP_LOGI(TAG, "CC1101 detected");
+  ESP_LOGI(TAG, "Detected CC1101 (PARTNUM=0x%02X VERSION=0x%02X)", this->cc1101_partnum_, this->cc1101_version_);
   return true;
 }
 
@@ -141,6 +154,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
 }
 
 void RFBridgeComponent::cc1101_enter_rx_() {
+  ESP_LOGI(TAG, "Entering CC1101 RX mode; listening for RF activity...");
   this->cc1101_strobe_(cc1101::SFRX);
   this->cc1101_strobe_(cc1101::SRX);
 }
@@ -209,6 +223,105 @@ uint8_t RFBridgeComponent::spi_transfer_byte_(uint8_t value) {
     delayMicroseconds(1);
   }
   return result;
+}
+
+
+int16_t RFBridgeComponent::cc1101_read_rssi_dbm_() {
+  const uint8_t raw = this->cc1101_read_status_(cc1101::RSSI);
+  int16_t rssi = raw;
+  if (rssi >= 128) {
+    rssi = ((rssi - 256) / 2) - 74;
+  } else {
+    rssi = (rssi / 2) - 74;
+  }
+  return rssi;
+}
+
+void RFBridgeComponent::rx_setup_() {
+  if (this->gdo0_pin_ == nullptr) {
+    ESP_LOGW(TAG, "GDO0 pin is not configured; RX edge capture disabled");
+    this->rx_enabled_ = false;
+    return;
+  }
+
+  this->rx_enabled_ = true;
+  this->rx_have_level_ = false;
+  this->rx_edge_count_ = 0;
+  this->rx_packets_seen_ = 0;
+  this->rx_edges_seen_ = 0;
+  this->rx_overruns_ = 0;
+  ESP_LOGI(TAG, "RX pipeline ready: polling GDO0 for async OOK edges");
+}
+
+void RFBridgeComponent::rx_poll_() {
+  if (!this->rx_enabled_ || this->gdo0_pin_ == nullptr) {
+    return;
+  }
+
+  const uint32_t now_us = micros();
+  const bool level = this->gdo0_pin_->digital_read();
+
+  if (!this->rx_have_level_) {
+    this->rx_reset_packet_(now_us, level);
+    this->rx_have_level_ = true;
+    return;
+  }
+
+  if (level != this->rx_last_level_) {
+    this->rx_record_edge_(now_us, level);
+    return;
+  }
+
+  if (this->rx_edge_count_ >= RX_MIN_EDGES && (now_us - this->rx_last_edge_us_) > RX_PACKET_GAP_US) {
+    this->rx_finish_packet_(now_us);
+    this->rx_reset_packet_(now_us, level);
+  }
+}
+
+void RFBridgeComponent::rx_record_edge_(uint32_t now_us, bool level) {
+  const uint32_t delta = now_us - this->rx_last_edge_us_;
+  this->rx_last_edge_us_ = now_us;
+  this->rx_last_level_ = level;
+  this->rx_edges_seen_++;
+
+  if (this->rx_edge_count_ == 0) {
+    this->rx_packet_start_us_ = now_us;
+  }
+
+  if (this->rx_edge_count_ < RX_MAX_EDGES) {
+    this->rx_edges_[this->rx_edge_count_++] = delta > 0xFFFF ? 0xFFFF : static_cast<uint16_t>(delta);
+  } else {
+    this->rx_overruns_++;
+  }
+
+  const uint32_t now_ms = millis();
+  if ((now_ms - this->rx_last_activity_log_ms_) > 1000) {
+    this->rx_last_activity_log_ms_ = now_ms;
+    ESP_LOGD(TAG, "RF activity detected on GDO0");
+  }
+}
+
+void RFBridgeComponent::rx_finish_packet_(uint32_t now_us) {
+  const uint32_t duration_us = now_us - this->rx_packet_start_us_;
+  if (duration_us < RX_MIN_PACKET_US) {
+    return;
+  }
+
+  this->rx_packets_seen_++;
+  this->rx_last_packet_edges_ = this->rx_edge_count_;
+  this->rx_last_packet_duration_us_ = duration_us;
+  this->rx_last_rssi_dbm_ = this->cc1101_read_rssi_dbm_();
+
+  ESP_LOGI(TAG, "RF packet candidate #%u: edges=%u duration=%u us rssi=%d dBm",
+           this->rx_packets_seen_, this->rx_last_packet_edges_, this->rx_last_packet_duration_us_,
+           this->rx_last_rssi_dbm_);
+}
+
+void RFBridgeComponent::rx_reset_packet_(uint32_t now_us, bool level) {
+  this->rx_edge_count_ = 0;
+  this->rx_packet_start_us_ = now_us;
+  this->rx_last_edge_us_ = now_us;
+  this->rx_last_level_ = level;
 }
 
 uint8_t RFBridgeComponent::outprize_speed_code_(uint8_t speed_percent) const {
