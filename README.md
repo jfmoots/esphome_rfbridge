@@ -1,15 +1,34 @@
 # ESPHome RF Bridge
 
-Current release: **v0.8.0 – Capture Fingerprint Analyzer**
+Current release: **v0.9.0 – Symbol Stream Analyzer**
 
-This release adds normalized pulse analysis and capture fingerprints on top of the RSSI-gated raw pulse recorder. Repeated RF transmissions can now be compared by fingerprint before protocol-specific decoding is implemented.
+ESPHome external component for a CC1101-based RF bridge.
 
-# ESPHome RF Bridge
+## v0.9.0 highlights
 
-ESPHome RF Bridge is a protocol-agnostic CC1101 RF bridge component for ESPHome.
+- Keeps RSSI-gated fixed-window capture.
+- Keeps raw pulse timing, histograms, normalized pulses, and fingerprints.
+- Adds compact symbol alphabet output for each capture.
+- Adds symbol stream output to make repeated patterns easier to see.
+- Adds run-length compressed symbol output.
+- Adds simple repeated motif detection.
 
-## Current release: v0.7.0
+## Example ESPHome YAML
 
-This release adds a pulse histogram analyzer on top of the RSSI-gated capture path. When RSSI crosses the configured threshold, the component captures a fixed 140 ms GDO0 window and logs the edge timing deltas in microseconds.
+```yaml
+external_components:
+  - source:
+      type: git
+      url: https://github.com/jfmoots/esphome_rfbridge
+      ref: main
+      path: esphome/components
+    refresh: 0s
+    components: [rfbridge]
 
-This is intended to produce copyable timing data for protocol reverse engineering before adding protocol-specific decoders.
+rfbridge:
+  cs_pin: GPIO5
+  sck_pin: GPIO18
+  mosi_pin: GPIO23
+  miso_pin: GPIO19
+  gdo0_pin: GPIO4
+```

@@ -626,6 +626,138 @@ void RFBridgeComponent::rx_log_protocol_analysis_(uint32_t capture_no) {
     used[best_bin] = true;
     ESP_LOGI(TAG, "  #%u: %u us count=%u", rank + 1, best_bin * RX_ANALYSIS_BIN_US, best_count);
   }
+
+  // v0.9.0 analyzer: assign a compact symbol alphabet by ascending pulse bucket.
+  static const char SYMBOLS[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  char bin_symbol[RX_ANALYSIS_BIN_COUNT]{};
+  uint8_t symbol_count = 0;
+  for (uint16_t bin = 0; bin < RX_ANALYSIS_BIN_COUNT; bin++) {
+    if (hist[bin] == 0) {
+      continue;
+    }
+    if (symbol_count < sizeof(SYMBOLS) - 1) {
+      bin_symbol[bin] = SYMBOLS[symbol_count++];
+    } else {
+      bin_symbol[bin] = '?';
+    }
+  }
+
+  ESP_LOGI(TAG, "Capture #%u symbol alphabet, ascending pulse buckets:", capture_no);
+  offset = snprintf(stream, sizeof(stream), "  alphabet:");
+  on_line = 0;
+  for (uint16_t bin = 0; bin < RX_ANALYSIS_BIN_COUNT; bin++) {
+    if (hist[bin] == 0) {
+      continue;
+    }
+    const int written = snprintf(stream + offset, sizeof(stream) - offset, " %c=%u", bin_symbol[bin], bin * RX_ANALYSIS_BIN_US);
+    if (written <= 0 || written >= static_cast<int>(sizeof(stream) - offset) || ++on_line >= 12) {
+      ESP_LOGI(TAG, "%s", stream);
+      offset = snprintf(stream, sizeof(stream), "  alphabet:");
+      on_line = 0;
+      if (written > 0 && written < static_cast<int>(sizeof(stream) - offset)) {
+        offset += snprintf(stream + offset, sizeof(stream) - offset, " %c=%u", bin_symbol[bin], bin * RX_ANALYSIS_BIN_US);
+        on_line = 1;
+      }
+    } else {
+      offset += written;
+    }
+  }
+  if (on_line > 0) {
+    ESP_LOGI(TAG, "%s", stream);
+  }
+
+  char symbols[RX_MAX_EDGES + 1]{};
+  uint16_t symbol_len = 0;
+  for (uint16_t i = 0; i < this->rx_edge_count_ && symbol_len < RX_MAX_EDGES; i++) {
+    const uint16_t norm = this->rx_normalize_pulse_(this->rx_edges_[i]);
+    if (norm == 0) {
+      continue;
+    }
+    const uint16_t bin = norm / RX_ANALYSIS_BIN_US;
+    if (bin < RX_ANALYSIS_BIN_COUNT && bin_symbol[bin] != 0) {
+      symbols[symbol_len++] = bin_symbol[bin];
+    }
+  }
+  symbols[symbol_len] = '\0';
+
+  ESP_LOGI(TAG, "Capture #%u symbol stream, len=%u:", capture_no, symbol_len);
+  for (uint16_t start = 0; start < symbol_len && start < RX_ANALYSIS_MAX_PRINTED_SYMBOLS; start += 64) {
+    char line[96];
+    uint16_t line_len = 0;
+    for (uint16_t i = start; i < symbol_len && i < start + 64 && line_len < sizeof(line) - 1; i++) {
+      line[line_len++] = symbols[i];
+    }
+    line[line_len] = '\0';
+    ESP_LOGI(TAG, "  symbols[%03u-%03u]: %s", start, start + line_len - 1, line);
+  }
+  if (symbol_len > RX_ANALYSIS_MAX_PRINTED_SYMBOLS) {
+    ESP_LOGI(TAG, "  symbols: ... truncated at %u of %u symbols", RX_ANALYSIS_MAX_PRINTED_SYMBOLS, symbol_len);
+  }
+
+  ESP_LOGI(TAG, "Capture #%u run-length stream:", capture_no);
+  offset = snprintf(stream, sizeof(stream), "  rle:");
+  uint16_t run_index = 0;
+  uint16_t pos = 0;
+  while (pos < symbol_len && run_index < 48) {
+    const char sym = symbols[pos];
+    uint16_t run = 1;
+    while (pos + run < symbol_len && symbols[pos + run] == sym) {
+      run++;
+    }
+    const int written = (run == 1)
+                            ? snprintf(stream + offset, sizeof(stream) - offset, " %c", sym)
+                            : snprintf(stream + offset, sizeof(stream) - offset, " %cx%u", sym, run);
+    if (written <= 0 || written >= static_cast<int>(sizeof(stream) - offset)) {
+      ESP_LOGI(TAG, "%s", stream);
+      offset = snprintf(stream, sizeof(stream), "  rle:");
+      continue;
+    }
+    offset += written;
+    pos += run;
+    run_index++;
+  }
+  if (offset > 6) {
+    ESP_LOGI(TAG, "%s", stream);
+  }
+  if (pos < symbol_len) {
+    ESP_LOGI(TAG, "  rle: ... truncated after %u runs of %u symbols", run_index, symbol_len);
+  }
+
+  // Simple motif scan: find the most repeated adjacent 2/3/4-symbol motif.
+  uint8_t best_len = 0;
+  uint16_t best_pos = 0;
+  uint16_t best_repeats = 1;
+  for (uint8_t motif_len = 2; motif_len <= 4; motif_len++) {
+    for (uint16_t i = 0; i + motif_len * 2 <= symbol_len; i++) {
+      uint16_t repeats = 1;
+      bool still_matching = true;
+      while (still_matching && i + (repeats + 1) * motif_len <= symbol_len) {
+        for (uint8_t j = 0; j < motif_len; j++) {
+          if (symbols[i + j] != symbols[i + repeats * motif_len + j]) {
+            still_matching = false;
+            break;
+          }
+        }
+        if (still_matching) {
+          repeats++;
+        }
+      }
+      if (repeats > best_repeats) {
+        best_repeats = repeats;
+        best_len = motif_len;
+        best_pos = i;
+      }
+    }
+  }
+  if (best_repeats > 1) {
+    char motif[8]{};
+    for (uint8_t i = 0; i < best_len && i < sizeof(motif) - 1; i++) {
+      motif[i] = symbols[best_pos + i];
+    }
+    ESP_LOGI(TAG, "Capture #%u repeated motif: '%s' x%u at symbol offset %u", capture_no, motif, best_repeats, best_pos);
+  } else {
+    ESP_LOGI(TAG, "Capture #%u repeated motif: none detected", capture_no);
+  }
 }
 
 void RFBridgeComponent::rx_reset_packet_(uint32_t now_us, bool level) {
