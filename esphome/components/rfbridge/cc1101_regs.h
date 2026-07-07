@@ -90,10 +90,10 @@ static constexpr uint8_t READ_SINGLE = 0x80;
 static constexpr uint8_t READ_BURST = 0xC0;
 static constexpr uint8_t WRITE_BURST = 0x40;
 
-// Values proven in the diagnostic firmware.
+// Values observed from the known-good ESPHome RF Gateway/sniffer register readback.
 static constexpr uint8_t GDO_SERIAL_DATA = 0x0D;   // async serial data output
-static constexpr uint8_t GDO_HIGH_Z = 0x2E;
-static constexpr uint8_t PKT_ASYNC_SERIAL = 0x32;  // async serial mode
+static constexpr uint8_t GDO_IOCFG2_KNOWN_GOOD = 0x29;
+static constexpr uint8_t PKTCTRL0_KNOWN_GOOD = 0x30;  // known-good working sniffer value
 
 }  // namespace cc1101
 }  // namespace rfbridge

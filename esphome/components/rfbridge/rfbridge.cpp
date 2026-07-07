@@ -126,7 +126,7 @@ void RFBridgeComponent::cc1101_reset_() {
 
 void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
   ESP_LOGI(TAG, "Configuring CC1101 for 433.92 MHz OOK async RX...");
-  ESP_LOGI(TAG, "Applying known-good sniffer profile: OOK, 2.0 kbps, 58 kHz RX bandwidth, direct async output");
+  ESP_LOGI(TAG, "Applying readback-matched known-good sniffer profile");
 
   this->cc1101_enter_idle_();
 
@@ -135,8 +135,9 @@ void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
   this->cc1101_write_reg_(cc1101::FREQ0, 0x71);
 
   this->cc1101_write_reg_(cc1101::IOCFG0, cc1101::GDO_SERIAL_DATA);
-  this->cc1101_write_reg_(cc1101::IOCFG2, cc1101::GDO_HIGH_Z);
-  this->cc1101_write_reg_(cc1101::PKTCTRL0, cc1101::PKT_ASYNC_SERIAL);
+  this->cc1101_write_reg_(cc1101::IOCFG2, cc1101::GDO_IOCFG2_KNOWN_GOOD);
+  this->cc1101_write_reg_(cc1101::PKTCTRL0, cc1101::PKTCTRL0_KNOWN_GOOD);
+  this->cc1101_write_reg_(cc1101::PKTLEN, 0xFF);
 
   this->cc1101_write_reg_(cc1101::FSCTRL1, 0x06);
   // Match the known-good diagnostic sniffer configuration:
@@ -167,6 +168,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
 
   ESP_LOGI(TAG, "  IOCFG0   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG0));
   ESP_LOGI(TAG, "  IOCFG2   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG2));
+  ESP_LOGI(TAG, "  PKTLEN   = 0x%02X", this->cc1101_read_reg_(cc1101::PKTLEN));
   ESP_LOGI(TAG, "  PKTCTRL0 = 0x%02X", this->cc1101_read_reg_(cc1101::PKTCTRL0));
 }
 
@@ -182,15 +184,15 @@ void RFBridgeComponent::cc1101_log_register_(const char *name, uint8_t addr, int
 
 void RFBridgeComponent::cc1101_dump_registers_(const char *stage) {
   ESP_LOGI(TAG, "CC1101 register dump (%s):", stage);
-  this->cc1101_log_register_("IOCFG2", cc1101::IOCFG2, cc1101::GDO_HIGH_Z);
+  this->cc1101_log_register_("IOCFG2", cc1101::IOCFG2, cc1101::GDO_IOCFG2_KNOWN_GOOD);
   this->cc1101_log_register_("IOCFG1", cc1101::IOCFG1);
   this->cc1101_log_register_("IOCFG0", cc1101::IOCFG0, cc1101::GDO_SERIAL_DATA);
   this->cc1101_log_register_("FIFOTHR", cc1101::FIFOTHR);
   this->cc1101_log_register_("SYNC1", cc1101::SYNC1);
   this->cc1101_log_register_("SYNC0", cc1101::SYNC0);
-  this->cc1101_log_register_("PKTLEN", cc1101::PKTLEN);
+  this->cc1101_log_register_("PKTLEN", cc1101::PKTLEN, 0xFF);
   this->cc1101_log_register_("PKTCTRL1", cc1101::PKTCTRL1);
-  this->cc1101_log_register_("PKTCTRL0", cc1101::PKTCTRL0, cc1101::PKT_ASYNC_SERIAL);
+  this->cc1101_log_register_("PKTCTRL0", cc1101::PKTCTRL0, cc1101::PKTCTRL0_KNOWN_GOOD);
   this->cc1101_log_register_("ADDR", cc1101::ADDR);
   this->cc1101_log_register_("CHANNR", cc1101::CHANNR);
   this->cc1101_log_register_("FSCTRL1", cc1101::FSCTRL1, 0x06);

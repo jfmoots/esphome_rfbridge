@@ -2,7 +2,7 @@
 
 Reusable ESPHome RF bridge foundation for CC1101-based 433 MHz devices.
 
-## v0.4.1 Focus
+## v0.4.2 Focus
 
 This release adds CC1101 register diagnostics. It is intended to verify that the ESPHome-native driver is programming the radio into the same effective mode as the earlier standalone diagnostic firmware.
 
@@ -46,7 +46,7 @@ rfbridge:
 ```
 
 
-## v0.4.1 Notes
+## v0.4.2 Notes
 
 This build aligns the native CC1101 configuration more closely with the original standalone diagnostic sniffer that successfully captured Outprize packets. In particular, it updates the modem configuration to the expected 2.0 kbps / ~58 kHz receive-bandwidth profile while preserving asynchronous GDO0 serial data output.
 

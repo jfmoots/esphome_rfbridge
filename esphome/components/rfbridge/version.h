@@ -1,6 +1,6 @@
 #pragma once
 
-#define RFBRIDGE_VERSION "0.4.1"
+#define RFBRIDGE_VERSION "0.4.2"
 
 #ifndef RFBRIDGE_GIT_REF
 #define RFBRIDGE_GIT_REF "unknown"
