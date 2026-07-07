@@ -11,6 +11,8 @@ static const char *const TAG = "rfbridge";
 void RFBridgeComponent::setup() {
   ESP_LOGI(TAG, "======================================");
   ESP_LOGI(TAG, "ESPHome RF Bridge v%s", RFBRIDGE_VERSION);
+  ESP_LOGI(TAG, "Build: %s %s", RFBRIDGE_BUILD_DATE, RFBRIDGE_BUILD_TIME);
+  ESP_LOGI(TAG, "Git: %s", RFBRIDGE_GIT_REF);
   ESP_LOGI(TAG, "======================================");
 
   if (this->cs_pin_ == nullptr || this->sck_pin_ == nullptr || this->mosi_pin_ == nullptr || this->miso_pin_ == nullptr) {
@@ -56,6 +58,8 @@ void RFBridgeComponent::loop() {
 void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "RF Bridge");
   ESP_LOGCONFIG(TAG, "  Firmware Version: %s", RFBRIDGE_VERSION);
+  ESP_LOGCONFIG(TAG, "  Build: %s %s", RFBRIDGE_BUILD_DATE, RFBRIDGE_BUILD_TIME);
+  ESP_LOGCONFIG(TAG, "  Git: %s", RFBRIDGE_GIT_REF);
   LOG_PIN("  CS Pin: ", this->cs_pin_);
   LOG_PIN("  SCK Pin: ", this->sck_pin_);
   LOG_PIN("  MOSI Pin: ", this->mosi_pin_);
@@ -295,9 +299,12 @@ void RFBridgeComponent::rx_record_edge_(uint32_t now_us, bool level) {
   }
 
   const uint32_t now_ms = millis();
+  ESP_LOGVV(TAG, "RF edge #%u delta=%u us level=%d", this->rx_edge_count_, delta, level);
+
   if ((now_ms - this->rx_last_activity_log_ms_) > 1000) {
     this->rx_last_activity_log_ms_ = now_ms;
-    ESP_LOGD(TAG, "RF activity detected on GDO0");
+    ESP_LOGD(TAG, "RF activity detected on GDO0; edges_seen=%u current_edges=%u",
+             this->rx_edges_seen_, this->rx_edge_count_);
   }
 }
 

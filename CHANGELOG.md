@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.2 - Build Metadata Logging
+
+- Adds explicit build metadata to RFBridge logs.
+- Reports firmware version, build date/time, and git reference in startup logs.
+- Reports firmware version, build date/time, and git reference in `dump_config()`.
+- Adds very-verbose per-edge RF logging for receive bring-up.
+- Keeps the v0.3.x receive pipeline unchanged.
+
 ## v0.3.1 - Version Logging
 
 - Adds `version.h` with a single RFBridge firmware version constant.
@@ -7,20 +15,13 @@
 - Reports the RFBridge firmware version in `dump_config()`.
 - Keeps the v0.3.0 receive pipeline unchanged.
 
-# Changelog
-
-## v0.3.1 - RF Receive Pipeline
+## v0.3.0 - RF Receive Pipeline
 
 - Adds first RF receive pipeline for CC1101 async OOK mode.
 - Adds clearer CC1101 startup logging.
 - Keeps native bit-banged SPI implementation.
 - Polls GDO0 for RF edge activity and assembles packet candidates.
-- Adds RX diagnostics in `dump_config()`:
-  - RX enabled
-  - packets seen
-  - edges seen
-  - overruns
-  - last packet duration / edge count / RSSI
+- Adds RX diagnostics in `dump_config()`.
 - Leaves protocol decoding and RF transmit as future milestones.
 
 ## v0.2.2 - CC1101 Bring-Up Logging

@@ -63,3 +63,6 @@ When RF activity is detected:
 ```text
 RF packet candidate #1: edges=72 duration=25000 us rssi=-44 dBm
 ```
+
+
+Current development version: **v0.3.2**
