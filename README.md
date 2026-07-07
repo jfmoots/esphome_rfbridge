@@ -65,4 +65,9 @@ RF packet candidate #1: edges=72 duration=25000 us rssi=-44 dBm
 ```
 
 
-Current development version: **v0.3.2**
+Current development version: **v0.3.3**
+
+
+## v0.3.3 Notes
+
+This release tunes the raw RF receive pipeline so sparse background noise does not accumulate into fake packets. It raises packet thresholds toward the expected Outprize capture shape and adds gap statistics for each packet candidate.

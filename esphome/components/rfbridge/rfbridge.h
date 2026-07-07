@@ -76,10 +76,16 @@ class RFBridgeComponent : public Component {
   void rx_finish_packet_(uint32_t now_us);
   void rx_reset_packet_(uint32_t now_us, bool level);
 
-  static constexpr uint16_t RX_MAX_EDGES = 160;
-  static constexpr uint32_t RX_PACKET_GAP_US = 6000;
-  static constexpr uint32_t RX_MIN_PACKET_US = 3000;
-  static constexpr uint16_t RX_MIN_EDGES = 12;
+  static constexpr uint16_t RX_MAX_EDGES = 180;
+  // Treat a packet as complete only after a real quiet period. Outprize packets
+  // contain 70+ edges and can include several millisecond gaps inside a frame,
+  // so short gaps must not prematurely split packets.
+  static constexpr uint32_t RX_PACKET_GAP_US = 25000;
+  // Reset sparse/noisy partial captures so background RF does not slowly
+  // accumulate into fake packets.
+  static constexpr uint32_t RX_STALE_PARTIAL_US = 25000;
+  static constexpr uint32_t RX_MIN_PACKET_US = 15000;
+  static constexpr uint16_t RX_MIN_EDGES = 40;
 
   bool rx_enabled_{false};
   bool rx_have_level_{false};
@@ -93,6 +99,10 @@ class RFBridgeComponent : public Component {
   uint32_t rx_edges_seen_{0};
   uint32_t rx_last_packet_duration_us_{0};
   uint16_t rx_last_packet_edges_{0};
+  uint16_t rx_last_min_gap_us_{0};
+  uint16_t rx_last_max_gap_us_{0};
+  uint16_t rx_last_avg_gap_us_{0};
+  uint16_t rx_discarded_partials_{0};
   int16_t rx_last_rssi_dbm_{0};
   uint16_t rx_edges_[RX_MAX_EDGES]{};
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.3 - Receive Gap Tuning
+
+- Raises receive packet thresholds to avoid short background-noise candidates.
+- Adds stale partial discard handling so sparse RF noise cannot slowly accumulate into fake packets.
+- Adds min/avg/max gap statistics for packet candidates.
+- Adds discarded partial diagnostics to dump_config output.
+- Keeps v0.3.x CC1101 bring-up, version metadata, and receive pipeline intact.
+
 ## v0.3.2 - Build Metadata Logging
 
 - Adds explicit build metadata to RFBridge logs.

@@ -74,8 +74,11 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  RX Packets Seen: %u", this->rx_packets_seen_);
   ESP_LOGCONFIG(TAG, "  RX Edges Seen: %u", this->rx_edges_seen_);
   ESP_LOGCONFIG(TAG, "  RX Overruns: %u", this->rx_overruns_);
+  ESP_LOGCONFIG(TAG, "  Discarded Partials: %u", this->rx_discarded_partials_);
   ESP_LOGCONFIG(TAG, "  Last Packet: %u edges, %u us, RSSI %d dBm", this->rx_last_packet_edges_,
                 this->rx_last_packet_duration_us_, this->rx_last_rssi_dbm_);
+  ESP_LOGCONFIG(TAG, "  Last Packet Gaps: min=%u us avg=%u us max=%u us", this->rx_last_min_gap_us_,
+                this->rx_last_avg_gap_us_, this->rx_last_max_gap_us_);
 }
 
 bool RFBridgeComponent::cc1101_begin_() {
@@ -254,7 +257,10 @@ void RFBridgeComponent::rx_setup_() {
   this->rx_packets_seen_ = 0;
   this->rx_edges_seen_ = 0;
   this->rx_overruns_ = 0;
+  this->rx_discarded_partials_ = 0;
   ESP_LOGI(TAG, "RX pipeline ready: polling GDO0 for async OOK edges");
+  ESP_LOGI(TAG, "RX thresholds: min_edges=%u min_duration=%u us packet_gap=%u us stale_partial=%u us",
+           RX_MIN_EDGES, RX_MIN_PACKET_US, RX_PACKET_GAP_US, RX_STALE_PARTIAL_US);
 }
 
 void RFBridgeComponent::rx_poll_() {
@@ -276,8 +282,17 @@ void RFBridgeComponent::rx_poll_() {
     return;
   }
 
-  if (this->rx_edge_count_ >= RX_MIN_EDGES && (now_us - this->rx_last_edge_us_) > RX_PACKET_GAP_US) {
+  const uint32_t quiet_us = now_us - this->rx_last_edge_us_;
+
+  if (this->rx_edge_count_ >= RX_MIN_EDGES && quiet_us > RX_PACKET_GAP_US) {
     this->rx_finish_packet_(now_us);
+    this->rx_reset_packet_(now_us, level);
+    return;
+  }
+
+  if (this->rx_edge_count_ > 0 && this->rx_edge_count_ < RX_MIN_EDGES && quiet_us > RX_STALE_PARTIAL_US) {
+    this->rx_discarded_partials_++;
+    ESP_LOGV(TAG, "Discarding stale RF partial: edges=%u quiet=%u us", this->rx_edge_count_, quiet_us);
     this->rx_reset_packet_(now_us, level);
   }
 }
@@ -314,14 +329,28 @@ void RFBridgeComponent::rx_finish_packet_(uint32_t now_us) {
     return;
   }
 
+  uint32_t sum_gap = 0;
+  uint16_t min_gap = 0xFFFF;
+  uint16_t max_gap = 0;
+  for (uint16_t i = 0; i < this->rx_edge_count_; i++) {
+    const uint16_t gap = this->rx_edges_[i];
+    if (gap < min_gap) min_gap = gap;
+    if (gap > max_gap) max_gap = gap;
+    sum_gap += gap;
+  }
+
   this->rx_packets_seen_++;
   this->rx_last_packet_edges_ = this->rx_edge_count_;
   this->rx_last_packet_duration_us_ = duration_us;
+  this->rx_last_min_gap_us_ = min_gap == 0xFFFF ? 0 : min_gap;
+  this->rx_last_max_gap_us_ = max_gap;
+  this->rx_last_avg_gap_us_ = this->rx_edge_count_ > 0 ? static_cast<uint16_t>(sum_gap / this->rx_edge_count_) : 0;
   this->rx_last_rssi_dbm_ = this->cc1101_read_rssi_dbm_();
 
-  ESP_LOGI(TAG, "RF packet candidate #%u: edges=%u duration=%u us rssi=%d dBm",
+  ESP_LOGI(TAG, "RF packet candidate #%u: edges=%u duration=%u us rssi=%d dBm gaps[min/avg/max]=%u/%u/%u us",
            this->rx_packets_seen_, this->rx_last_packet_edges_, this->rx_last_packet_duration_us_,
-           this->rx_last_rssi_dbm_);
+           this->rx_last_rssi_dbm_, this->rx_last_min_gap_us_, this->rx_last_avg_gap_us_,
+           this->rx_last_max_gap_us_);
 }
 
 void RFBridgeComponent::rx_reset_packet_(uint32_t now_us, bool level) {
