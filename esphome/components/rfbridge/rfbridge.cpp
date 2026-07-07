@@ -77,7 +77,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 PARTNUM: 0x%02X", this->cc1101_partnum_);
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
-  ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window raw pulse recorder");
+  ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window RF pulse analyzer");
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
   ESP_LOGCONFIG(TAG, "  RX Capture Window: %u us", RX_CAPTURE_WINDOW_US);
   ESP_LOGCONFIG(TAG, "  RX Packets Seen: %u", this->rx_packets_seen_);
@@ -340,7 +340,7 @@ void RFBridgeComponent::rx_setup_() {
   this->rx_discarded_partials_ = 0;
   this->rx_last_rssi_poll_ms_ = 0;
   this->rx_last_capture_ms_ = 0;
-  ESP_LOGI(TAG, "RX pipeline ready: RSSI-gated fixed-window raw pulse recorder");
+  ESP_LOGI(TAG, "RX pipeline ready: RSSI-gated fixed-window RF pulse analyzer");
   ESP_LOGI(TAG, "RX thresholds: arm_rssi=%d dBm capture_window=%u us cooldown=%u ms min_edges=%u",
            RX_RSSI_ARM_DBM, RX_CAPTURE_WINDOW_US, RX_CAPTURE_COOLDOWN_MS, RX_MIN_EDGES);
 }
@@ -437,6 +437,7 @@ void RFBridgeComponent::rx_finish_capture_(uint32_t start_us, uint32_t end_us, i
            this->rx_last_max_gap_us_);
 
   this->rx_log_raw_timings_(this->rx_packets_seen_);
+  this->rx_log_pulse_histogram_(this->rx_packets_seen_);
 }
 
 void RFBridgeComponent::rx_log_raw_timings_(uint32_t capture_no) {
@@ -450,6 +451,64 @@ void RFBridgeComponent::rx_log_raw_timings_(uint32_t capture_no) {
       offset += snprintf(line + offset, sizeof(line) - offset, " %u", this->rx_edges_[j]);
     }
     ESP_LOGI(TAG, "%s", line);
+  }
+}
+
+void RFBridgeComponent::rx_log_pulse_histogram_(uint32_t capture_no) {
+  uint16_t hist[RX_HIST_BIN_COUNT]{};
+
+  for (uint16_t i = 0; i < this->rx_edge_count_; i++) {
+    uint16_t bin = static_cast<uint16_t>((this->rx_edges_[i] + (RX_HIST_BIN_US / 2)) / RX_HIST_BIN_US);
+    if (bin >= RX_HIST_BIN_COUNT) {
+      bin = RX_HIST_BIN_COUNT - 1;
+    }
+    hist[bin]++;
+  }
+
+  ESP_LOGI(TAG, "Capture #%u pulse width histogram, %u us bins:", capture_no, RX_HIST_BIN_US);
+
+  char line[192];
+  int offset = snprintf(line, sizeof(line), "  bins:");
+  uint8_t entries_on_line = 0;
+  for (uint16_t bin = 0; bin < RX_HIST_BIN_COUNT; bin++) {
+    if (hist[bin] == 0) {
+      continue;
+    }
+
+    const uint16_t center = static_cast<uint16_t>(bin * RX_HIST_BIN_US);
+    const int written = snprintf(line + offset, sizeof(line) - offset, " %u:%u", center, hist[bin]);
+    if (written <= 0 || written >= static_cast<int>(sizeof(line) - offset) || ++entries_on_line >= 10) {
+      ESP_LOGI(TAG, "%s", line);
+      offset = snprintf(line, sizeof(line), "  bins:");
+      entries_on_line = 0;
+      if (written > 0 && written < static_cast<int>(sizeof(line) - offset)) {
+        offset += snprintf(line + offset, sizeof(line) - offset, " %u:%u", center, hist[bin]);
+        entries_on_line = 1;
+      }
+    } else {
+      offset += written;
+    }
+  }
+  if (entries_on_line > 0) {
+    ESP_LOGI(TAG, "%s", line);
+  }
+
+  ESP_LOGI(TAG, "Capture #%u dominant pulse buckets:", capture_no);
+  bool used[RX_HIST_BIN_COUNT]{};
+  for (uint8_t rank = 0; rank < 8; rank++) {
+    uint16_t best_bin = 0;
+    uint16_t best_count = 0;
+    for (uint16_t bin = 0; bin < RX_HIST_BIN_COUNT; bin++) {
+      if (!used[bin] && hist[bin] > best_count) {
+        best_count = hist[bin];
+        best_bin = bin;
+      }
+    }
+    if (best_count == 0) {
+      break;
+    }
+    used[best_bin] = true;
+    ESP_LOGI(TAG, "  #%u: ~%u us  count=%u", rank + 1, best_bin * RX_HIST_BIN_US, best_count);
   }
 }
 

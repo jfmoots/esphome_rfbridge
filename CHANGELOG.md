@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.7.0 – Pulse Histogram Analyzer
+
+Adds automatic pulse-width analysis for RSSI-gated RF captures.
+
+Changes:
+- Keeps RSSI-gated fixed-window capture and raw timing output from v0.6.0.
+- Adds per-capture pulse-width histograms using 64 us buckets.
+- Adds dominant pulse bucket reporting to make protocol timing easier to spot.
+- Updates firmware version metadata to 0.7.0.
+
 ## v0.6.0 – Raw Pulse Recorder
 
 Adds raw timing output for RSSI-gated RF captures.

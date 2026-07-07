@@ -77,6 +77,7 @@ class RFBridgeComponent : public Component {
   void rx_capture_window_(int16_t trigger_rssi_dbm);
   void rx_finish_capture_(uint32_t start_us, uint32_t end_us, int16_t trigger_rssi_dbm);
   void rx_log_raw_timings_(uint32_t capture_no);
+  void rx_log_pulse_histogram_(uint32_t capture_no);
   void rx_reset_packet_(uint32_t now_us, bool level);
 
   static constexpr uint16_t RX_MAX_EDGES = 220;
@@ -88,6 +89,8 @@ class RFBridgeComponent : public Component {
   static constexpr uint32_t RX_RSSI_POLL_INTERVAL_MS = 10;
   static constexpr uint32_t RX_MIN_PACKET_US = 15000;
   static constexpr uint16_t RX_MIN_EDGES = 40;
+  static constexpr uint16_t RX_HIST_BIN_US = 64;
+  static constexpr uint16_t RX_HIST_BIN_COUNT = 80;
 
   bool rx_enabled_{false};
   bool rx_have_level_{false};
