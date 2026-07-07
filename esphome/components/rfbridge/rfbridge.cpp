@@ -2,6 +2,7 @@
 #include "cc1101_regs.h"
 #include "version.h"
 #include "esphome/core/log.h"
+#include <cstdio>
 
 namespace esphome {
 namespace rfbridge {
@@ -76,7 +77,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 PARTNUM: 0x%02X", this->cc1101_partnum_);
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
-  ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window capture");
+  ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window raw pulse recorder");
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
   ESP_LOGCONFIG(TAG, "  RX Capture Window: %u us", RX_CAPTURE_WINDOW_US);
   ESP_LOGCONFIG(TAG, "  RX Packets Seen: %u", this->rx_packets_seen_);
@@ -339,7 +340,7 @@ void RFBridgeComponent::rx_setup_() {
   this->rx_discarded_partials_ = 0;
   this->rx_last_rssi_poll_ms_ = 0;
   this->rx_last_capture_ms_ = 0;
-  ESP_LOGI(TAG, "RX pipeline ready: RSSI-gated fixed-window capture");
+  ESP_LOGI(TAG, "RX pipeline ready: RSSI-gated fixed-window raw pulse recorder");
   ESP_LOGI(TAG, "RX thresholds: arm_rssi=%d dBm capture_window=%u us cooldown=%u ms min_edges=%u",
            RX_RSSI_ARM_DBM, RX_CAPTURE_WINDOW_US, RX_CAPTURE_COOLDOWN_MS, RX_MIN_EDGES);
 }
@@ -434,6 +435,22 @@ void RFBridgeComponent::rx_finish_capture_(uint32_t start_us, uint32_t end_us, i
            this->rx_packets_seen_, this->rx_last_packet_edges_, this->rx_last_packet_duration_us_,
            trigger_rssi_dbm, this->rx_last_rssi_dbm_, this->rx_last_min_gap_us_, this->rx_last_avg_gap_us_,
            this->rx_last_max_gap_us_);
+
+  this->rx_log_raw_timings_(this->rx_packets_seen_);
+}
+
+void RFBridgeComponent::rx_log_raw_timings_(uint32_t capture_no) {
+  ESP_LOGI(TAG, "Capture #%u raw edge timing deltas (us), count=%u:", capture_no, this->rx_edge_count_);
+
+  char line[192];
+  for (uint16_t i = 0; i < this->rx_edge_count_; i += 16) {
+    int offset = snprintf(line, sizeof(line), "  [%03u-%03u]", i,
+                          static_cast<unsigned>(i + 15 < this->rx_edge_count_ ? i + 15 : this->rx_edge_count_ - 1));
+    for (uint16_t j = i; j < this->rx_edge_count_ && j < i + 16 && offset > 0 && offset < static_cast<int>(sizeof(line)); j++) {
+      offset += snprintf(line + offset, sizeof(line) - offset, " %u", this->rx_edges_[j]);
+    }
+    ESP_LOGI(TAG, "%s", line);
+  }
 }
 
 void RFBridgeComponent::rx_reset_packet_(uint32_t now_us, bool level) {

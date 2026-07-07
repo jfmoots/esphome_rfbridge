@@ -76,6 +76,7 @@ class RFBridgeComponent : public Component {
   void rx_poll_();
   void rx_capture_window_(int16_t trigger_rssi_dbm);
   void rx_finish_capture_(uint32_t start_us, uint32_t end_us, int16_t trigger_rssi_dbm);
+  void rx_log_raw_timings_(uint32_t capture_no);
   void rx_reset_packet_(uint32_t now_us, bool level);
 
   static constexpr uint16_t RX_MAX_EDGES = 220;

@@ -1,7 +1,9 @@
 # ESPHome RF Bridge
 
-Reusable ESPHome RF bridge for CC1101-based 433 MHz experiments.
+ESPHome RF Bridge is a protocol-agnostic CC1101 RF bridge component for ESPHome.
 
-## v0.5.0
+## Current release: v0.6.0
 
-This release changes receive bring-up to match the original working Outprize diagnostic sniffer shape: RSSI-gated fixed-window capture. The bridge ignores idle GDO0 noise until RSSI crosses -80 dBm, then captures a 140 ms GDO0 timing window for later decoding.
+This release adds a raw pulse recorder on top of the RSSI-gated capture path. When RSSI crosses the configured threshold, the component captures a fixed 140 ms GDO0 window and logs the edge timing deltas in microseconds.
+
+This is intended to produce copyable timing data for protocol reverse engineering before adding protocol-specific decoders.
