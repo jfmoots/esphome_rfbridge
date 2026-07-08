@@ -1,4 +1,4 @@
-# ESPHome RF Bridge v1.2.1
+# ESPHome RF Bridge v1.3.0
 
 Build metadata compile-fix release for OEM waveform replay testing.
 
@@ -58,13 +58,13 @@ button:
 ```
 
 
-## v1.2.1 OEM waveform replay test
+## v1.3.0 OEM waveform replay test
 
 This release adds a raw replay smoke test for the transmit path. Use it before relying on generated Outprize packets.
 
 Test flow:
 
-1. Flash v1.2.1.
+1. Flash v1.3.0.
 2. Press one OEM Outprize remote button and confirm the bridge logs an `OUTPRIZE` decode.
 3. Press the ESPHome button `RF Replay Last Capture`.
 4. Watch whether the fan repeats the same behavior.
@@ -81,3 +81,17 @@ button:
       - lambda: |-
           id(rf_bridge).replay_last_capture(1);
 ```
+
+
+## v1.3.0 TX Hardware Verification
+
+This release adds a protocol-neutral OOK hardware test burst. Use the `RF TX Hardware Test Burst` template button to confirm that the CC1101 can emit a visible 433.92 MHz OOK burst before debugging Outprize packet synthesis.
+
+Example lambda:
+
+```yaml
+- lambda: |-
+    id(rf_bridge).send_ook_test_burst(500, 120, 3);
+```
+
+The test emits an alternating OOK pulse train using 500 µs pulse spacing, 120 transitions, and 3 repeats, then restores the CC1101 to RX mode.

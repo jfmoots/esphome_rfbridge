@@ -49,6 +49,7 @@ class RFBridgeComponent : public Component {
   bool send_outprize_power_off(uint8_t repeats = 3) { return this->send_outprize_low24(0x600000, repeats); }
   bool send_outprize_fan_off(uint8_t repeats = 3) { return this->send_outprize_low24(0x600040, repeats); }
   bool replay_last_capture(uint8_t repeats = 1);
+  bool send_ook_test_burst(uint16_t pulse_us = 500, uint16_t pulse_count = 120, uint8_t repeats = 3);
 
  protected:
   GPIOPin *cs_pin_{nullptr};
@@ -170,6 +171,7 @@ class RFBridgeComponent : public Component {
   void tx_send_outprize_frame_(uint32_t prefix, uint32_t low24);
   bool transmit_low24_(uint32_t remote_id, uint32_t low24, uint8_t repeats = 3);
   bool transmit_last_capture_(uint8_t repeats = 1);
+  bool transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pulse_count, uint8_t repeats);
 
   static constexpr uint16_t OUTPRIZE_TX_RESET_GAP_US = 7500;
   static constexpr uint16_t OUTPRIZE_TX_SYNC_US = 4500;

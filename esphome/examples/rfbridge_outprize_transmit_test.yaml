@@ -74,3 +74,9 @@ button:
     on_press:
       - lambda: |-
           id(rf_bridge).replay_last_capture(1);
+
+  - platform: template
+    name: "RF TX Hardware Test Burst"
+    on_press:
+      - lambda: |-
+          id(rf_bridge).send_ook_test_burst(500, 120, 3);

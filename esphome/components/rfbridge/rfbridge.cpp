@@ -78,7 +78,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
   ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window verified Outprize decoder");
-  ESP_LOGCONFIG(TAG, "  TX Mode: Experimental Outprize async OOK transmitter");
+  ESP_LOGCONFIG(TAG, "  TX Mode: Experimental CC1101 async OOK transmitter");
   ESP_LOGCONFIG(TAG, "  Diagnostic Logging: %s", YESNO(this->diagnostic_logging_));
   ESP_LOGCONFIG(TAG, "  Outprize Remote ID / 11-bit prefix: 0x%03X", this->outprize_remote_id_ & 0x7FF);
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
@@ -1171,6 +1171,59 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
   this->rx_enabled_ = true;
 
   ESP_LOGI(TAG, "OUTPRIZE TX complete low24=0x%06X", low24 & 0xFFFFFF);
+  return true;
+}
+
+
+bool RFBridgeComponent::send_ook_test_burst(uint16_t pulse_us, uint16_t pulse_count, uint8_t repeats) {
+  return this->transmit_ook_test_burst_(pulse_us, pulse_count, repeats);
+}
+
+bool RFBridgeComponent::transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pulse_count, uint8_t repeats) {
+  if (!this->cc1101_configured_ || this->gdo0_pin_ == nullptr) {
+    ESP_LOGE(TAG, "OOK TX test unavailable; CC1101 configured=%s gdo0=%s", YESNO(this->cc1101_configured_),
+             this->gdo0_pin_ == nullptr ? "missing" : "present");
+    return false;
+  }
+
+  if (pulse_us < 100) pulse_us = 100;
+  if (pulse_us > 5000) pulse_us = 5000;
+  if (pulse_count < 2) pulse_count = 2;
+  if (pulse_count > 400) pulse_count = 400;
+  if (repeats == 0) repeats = 1;
+  if (repeats > 10) repeats = 10;
+
+  ESP_LOGI(TAG, "OOK TX hardware test start pulse=%u us count=%u repeats=%u", pulse_us, pulse_count, repeats);
+
+  this->rx_enabled_ = false;
+  this->cc1101_configure_ook_async_tx_();
+  this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
+  this->tx_write_data_(false);
+  delayMicroseconds(2000);
+  this->cc1101_strobe_(cc1101::STX);
+  delayMicroseconds(1000);
+
+  for (uint8_t r = 0; r < repeats; r++) {
+    for (uint16_t i = 0; i < pulse_count; i++) {
+      this->tx_write_data_((i & 1) == 0);
+      delayMicroseconds(pulse_us);
+    }
+    this->tx_write_data_(false);
+    delayMicroseconds(10000);
+  }
+
+  this->tx_write_data_(false);
+  delayMicroseconds(1000);
+  this->cc1101_enter_idle_();
+
+  this->gdo0_pin_->pin_mode(gpio::FLAG_INPUT);
+  this->cc1101_configure_ook_async_rx_();
+  this->cc1101_enter_rx_();
+  this->rx_reset_packet_(micros(), this->gdo0_pin_->digital_read());
+  this->rx_last_capture_ms_ = millis();
+  this->rx_enabled_ = true;
+
+  ESP_LOGI(TAG, "OOK TX hardware test complete pulse=%u us count=%u repeats=%u", pulse_us, pulse_count, repeats);
   return true;
 }
 

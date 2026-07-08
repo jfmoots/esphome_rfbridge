@@ -1,3 +1,13 @@
+# Changelog
+
+## v1.3.0 - TX Hardware Verification
+
+- Adds `send_ook_test_burst(pulse_us, pulse_count, repeats)` for protocol-neutral CC1101 TX bring-up.
+- Adds an example `RF TX Hardware Test Burst` ESPHome template button.
+- Keeps the verified Outprize decoder and existing experimental Outprize TX helpers intact.
+- Leaves packet synthesis untouched; this release is intended to verify that the RF hardware emits a 433.92 MHz OOK burst that can be seen with an SDR/sniffer.
+- Restores RX mode after every test burst.
+
 # v1.2.1 – Build Metadata Compile Fix
 
 Fixes v1.2.0 compile failure caused by missing build metadata macros.
