@@ -78,6 +78,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
   ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window verified Outprize decoder");
+  ESP_LOGCONFIG(TAG, "  TX Mode: Experimental Outprize async OOK transmitter");
   ESP_LOGCONFIG(TAG, "  Diagnostic Logging: %s", YESNO(this->diagnostic_logging_));
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
   ESP_LOGCONFIG(TAG, "  RX Capture Window: %u us", RX_CAPTURE_WINDOW_US);
@@ -988,28 +989,42 @@ void RFBridgeComponent::rx_reset_packet_(uint32_t now_us, bool level) {
   this->rx_last_level_ = level;
 }
 
-uint8_t RFBridgeComponent::outprize_speed_code_(uint8_t speed_percent) const {
+uint32_t RFBridgeComponent::outprize_speed_base_(uint8_t speed_percent) const {
+  // Verified Outprize speed table. Values are the speed portion of Low24,
+  // excluding direction/rain/vent modifiers. 0% is the awake/fan-off command.
+  //
+  //  0%: 0x040  (POWER ON / FAN OFF / awake idle)
+  // 10%: 0x440
+  // 20%: 0x240
+  // 30%: 0x640
+  // 40%: 0x140
+  // 50%: 0x540
+  // 60%: 0x340
+  // 70%: 0x740
+  // 80%: 0x0C0
+  // 90%: 0x4C0
+  //100%: 0x2C0
   switch (speed_percent) {
-    case 0: return 0x0;
-    case 10: return 0x8;
-    case 20: return 0x4;
-    case 30: return 0xC;
-    case 40: return 0x2;
-    case 50: return 0xA;
-    case 60: return 0x6;
-    case 70: return 0xE;
-    case 80: return 0x1;
-    case 90: return 0x9;
-    case 100: return 0x5;
+    case 0: return 0x040;
+    case 10: return 0x440;
+    case 20: return 0x240;
+    case 30: return 0x640;
+    case 40: return 0x140;
+    case 50: return 0x540;
+    case 60: return 0x340;
+    case 70: return 0x740;
+    case 80: return 0x0C0;
+    case 90: return 0x4C0;
+    case 100: return 0x2C0;
     default:
-      return this->outprize_speed_code_(static_cast<uint8_t>(((speed_percent + 5) / 10) * 10));
+      return this->outprize_speed_base_(static_cast<uint8_t>(((speed_percent + 5) / 10) * 10));
   }
 }
 
 uint32_t RFBridgeComponent::encode_outprize_low24(uint8_t speed_percent, OutprizeDirection direction,
                                                   bool rain_enabled, OutprizeVentCommand vent_command) const {
   uint32_t low24 = 0x600000;
-  low24 |= static_cast<uint32_t>(this->outprize_speed_code_(speed_percent)) << 9;
+  low24 |= this->outprize_speed_base_(speed_percent);
   if (direction == OutprizeDirection::IN) {
     low24 |= 0x20;
   }
@@ -1017,20 +1032,113 @@ uint32_t RFBridgeComponent::encode_outprize_low24(uint8_t speed_percent, Outpriz
     low24 |= 0x10;
   }
   low24 |= static_cast<uint8_t>(vent_command) & 0x0C;
-  return low24;
+  return low24 & 0xFFFFFF;
 }
 
 bool RFBridgeComponent::send_outprize(uint32_t remote_id, uint8_t speed_percent, OutprizeDirection direction,
                                       bool rain_enabled, OutprizeVentCommand vent_command) {
   const uint32_t low24 = this->encode_outprize_low24(speed_percent, direction, rain_enabled, vent_command);
-  ESP_LOGI(TAG, "Outprize TX remote_id=0x%06X low24=0x%06X", remote_id & 0xFFFFFF, low24 & 0xFFFFFF);
-  return this->transmit_low24_(remote_id, low24);
+  ESP_LOGI(TAG, "OUTPRIZE TX request remote_prefix=0x%03X speed=%u direction=%s rain=%s vent=0x%02X low24=0x%06X",
+           remote_id & 0x7FF, speed_percent, direction == OutprizeDirection::IN ? "IN" : "OUT",
+           YESNO(rain_enabled), static_cast<uint8_t>(vent_command), low24 & 0xFFFFFF);
+  return this->send_outprize_low24(remote_id, low24, 3);
 }
 
-bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24) {
-  ESP_LOGW(TAG, "TX placeholder only; CC1101 transmit not implemented yet. remote=0x%06X low24=0x%06X",
-           remote_id & 0xFFFFFF, low24 & 0xFFFFFF);
-  return false;
+bool RFBridgeComponent::send_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats) {
+  ESP_LOGI(TAG, "OUTPRIZE TX raw remote_prefix=0x%03X low24=0x%06X repeats=%u", remote_id & 0x7FF,
+           low24 & 0xFFFFFF, repeats);
+  return this->transmit_low24_(remote_id, low24, repeats);
+}
+
+void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
+  this->cc1101_enter_idle_();
+
+  // Keep the same known-good OOK profile and switch the radio to TX.  In
+  // asynchronous serial mode, GDO0 is used as the serial data line.  This is an
+  // experimental first transmitter; after each send we immediately restore RX.
+  this->cc1101_write_reg_(cc1101::IOCFG0, cc1101::GDO_SERIAL_DATA);
+  this->cc1101_write_reg_(cc1101::PKTCTRL0, cc1101::PKTCTRL0_KNOWN_GOOD);
+  this->cc1101_write_patable_(0xC0);
+}
+
+void RFBridgeComponent::tx_write_data_(bool level) {
+  if (this->gdo0_pin_ != nullptr) {
+    this->gdo0_pin_->digital_write(level);
+  }
+}
+
+void RFBridgeComponent::tx_send_outprize_frame_(uint32_t prefix, uint32_t low24) {
+  const uint64_t frame = ((static_cast<uint64_t>(prefix & 0x7FF)) << 24) | (low24 & 0xFFFFFFULL);
+
+  // Observed Outprize gap-width PWM:
+  //   reset/quiet low gap
+  //   high sync ~4.5 ms
+  //   each data bit: short low pulse, then high gap
+  //     0 = ~500 us high gap
+  //     1 = ~1500 us high gap
+  this->tx_write_data_(false);
+  delayMicroseconds(OUTPRIZE_TX_RESET_GAP_US);
+
+  this->tx_write_data_(true);
+  delayMicroseconds(OUTPRIZE_TX_SYNC_US);
+
+  for (int8_t bit = OUTPRIZE_TX_BITS - 1; bit >= 0; bit--) {
+    const bool one = ((frame >> bit) & 0x01ULL) != 0;
+    this->tx_write_data_(false);
+    delayMicroseconds(OUTPRIZE_TX_PULSE_US);
+    this->tx_write_data_(true);
+    delayMicroseconds(one ? OUTPRIZE_TX_ONE_GAP_US : OUTPRIZE_TX_ZERO_GAP_US);
+  }
+
+  this->tx_write_data_(false);
+}
+
+bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint8_t repeats) {
+  if (!this->cc1101_configured_ || this->gdo0_pin_ == nullptr) {
+    ESP_LOGE(TAG, "OUTPRIZE TX unavailable; CC1101 configured=%s gdo0=%s", YESNO(this->cc1101_configured_),
+             this->gdo0_pin_ == nullptr ? "missing" : "present");
+    return false;
+  }
+
+  const uint32_t prefix = remote_id == 0 ? OUTPRIZE_DEFAULT_PREFIX : (remote_id & 0x7FF);
+  if (repeats == 0) {
+    repeats = 1;
+  }
+  if (repeats > 8) {
+    repeats = 8;
+  }
+
+  ESP_LOGI(TAG, "OUTPRIZE TX start prefix=0x%03X low24=0x%06X repeats=%u", prefix, low24 & 0xFFFFFF, repeats);
+
+  // Pause RX while transmitting.  GDO0 normally acts as the CC1101 async data
+  // output during receive; for async transmit we drive the same line from the ESP.
+  this->rx_enabled_ = false;
+  this->cc1101_configure_ook_async_tx_();
+  this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
+  this->tx_write_data_(false);
+  delayMicroseconds(2000);
+  this->cc1101_strobe_(cc1101::STX);
+  delayMicroseconds(1000);
+
+  for (uint8_t i = 0; i < repeats; i++) {
+    this->tx_send_outprize_frame_(prefix, low24 & 0xFFFFFF);
+    delayMicroseconds(OUTPRIZE_TX_INTER_FRAME_GAP_US);
+  }
+
+  this->tx_write_data_(false);
+  delayMicroseconds(1000);
+  this->cc1101_enter_idle_();
+
+  // Restore RX mode and GDO0 input.
+  this->gdo0_pin_->pin_mode(gpio::FLAG_INPUT);
+  this->cc1101_configure_ook_async_rx_();
+  this->cc1101_enter_rx_();
+  this->rx_reset_packet_(micros(), this->gdo0_pin_->digital_read());
+  this->rx_last_capture_ms_ = millis();
+  this->rx_enabled_ = true;
+
+  ESP_LOGI(TAG, "OUTPRIZE TX complete low24=0x%06X", low24 & 0xFFFFFF);
+  return true;
 }
 
 }  // namespace rfbridge

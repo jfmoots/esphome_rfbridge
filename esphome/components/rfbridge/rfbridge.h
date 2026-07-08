@@ -39,6 +39,9 @@ class RFBridgeComponent : public Component {
 
   bool send_outprize(uint32_t remote_id, uint8_t speed_percent, OutprizeDirection direction, bool rain_enabled,
                      OutprizeVentCommand vent_command);
+  bool send_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats = 3);
+  bool send_outprize_power_off(uint32_t remote_id) { return this->send_outprize_low24(remote_id, 0x600000, 3); }
+  bool send_outprize_fan_off(uint32_t remote_id) { return this->send_outprize_low24(remote_id, 0x600040, 3); }
 
  protected:
   GPIOPin *cs_pin_{nullptr};
@@ -151,8 +154,20 @@ class RFBridgeComponent : public Component {
   uint16_t rx_edges_[RX_MAX_EDGES]{};
   uint8_t rx_levels_[RX_MAX_EDGES]{};
 
-  uint8_t outprize_speed_code_(uint8_t speed_percent) const;
-  bool transmit_low24_(uint32_t remote_id, uint32_t low24);
+  uint32_t outprize_speed_base_(uint8_t speed_percent) const;
+  void cc1101_configure_ook_async_tx_();
+  void tx_write_data_(bool level);
+  void tx_send_outprize_frame_(uint32_t prefix, uint32_t low24);
+  bool transmit_low24_(uint32_t remote_id, uint32_t low24, uint8_t repeats = 3);
+
+  static constexpr uint16_t OUTPRIZE_TX_RESET_GAP_US = 7500;
+  static constexpr uint16_t OUTPRIZE_TX_SYNC_US = 4500;
+  static constexpr uint16_t OUTPRIZE_TX_PULSE_US = 500;
+  static constexpr uint16_t OUTPRIZE_TX_ZERO_GAP_US = 500;
+  static constexpr uint16_t OUTPRIZE_TX_ONE_GAP_US = 1500;
+  static constexpr uint16_t OUTPRIZE_TX_INTER_FRAME_GAP_US = 9000;
+  static constexpr uint16_t OUTPRIZE_TX_BITS = 35;
+  static constexpr uint32_t OUTPRIZE_DEFAULT_PREFIX = 0x6CF;
 };
 
 }  // namespace rfbridge

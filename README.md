@@ -43,3 +43,62 @@ Unknown captures are ignored at debug level unless diagnostics are enabled.
 - POWER OFF: `0x600000`
 - POWER ON / wake / fan-off awake: `0x600040`
 - FAN button toggles fan-only: when off it sends remembered speed state; when on it sends `0x600040`.
+
+
+## v1.1.0 Transmit Testing
+
+This release adds the first experimental Outprize transmitter. The verified decoder remains the baseline; TX is intentionally simple and logs each send.
+
+Default Outprize prefix: `0x6CF`
+
+Example ESPHome template buttons:
+
+```yaml
+rfbridge:
+  id: rf_bridge
+  cs_pin: GPIO5
+  sck_pin: GPIO18
+  mosi_pin: GPIO23
+  miso_pin: GPIO19
+  gdo0_pin: GPIO4
+  diagnostic_logging: false
+
+button:
+  - platform: template
+    name: Outprize Fan 60 OUT
+    on_press:
+      - lambda: |-
+          id(rf_bridge).send_outprize(
+            0x6CF,
+            60,
+            esphome::rfbridge::OutprizeDirection::OUT,
+            false,
+            esphome::rfbridge::OutprizeVentCommand::NONE
+          );
+
+  - platform: template
+    name: Outprize Fan Off Awake
+    on_press:
+      - lambda: |-
+          id(rf_bridge).send_outprize_fan_off(0x6CF);
+
+  - platform: template
+    name: Outprize Power Off
+    on_press:
+      - lambda: |-
+          id(rf_bridge).send_outprize_power_off(0x6CF);
+
+  - platform: template
+    name: Outprize Vent Open
+    on_press:
+      - lambda: |-
+          id(rf_bridge).send_outprize(
+            0x6CF,
+            60,
+            esphome::rfbridge::OutprizeDirection::OUT,
+            false,
+            esphome::rfbridge::OutprizeVentCommand::OPEN
+          );
+```
+
+Recommended first test: use a harmless command such as FAN OFF / awake idle (`0x600040`) while watching the RF log, then test a remembered fan-state command such as 60% OUT (`0x600340`).
