@@ -42,19 +42,19 @@ button:
     name: "Outprize TX Test 40 Percent OUT"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x600140);
+          id(rf_bridge).send_outprize_low24(0x600140, 8);
 
   - platform: template
     name: "Outprize TX Test Fan Off Awake"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x600040);
+          id(rf_bridge).send_outprize_low24(0x600040, 8);
 
   - platform: template
     name: "Outprize TX Test Power Off"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x600000);
+          id(rf_bridge).send_outprize_low24(0x600000, 8);
 ```
 
 
@@ -91,7 +91,20 @@ Example lambda:
 
 ```yaml
 - lambda: |-
-    id(rf_bridge).send_ook_test_burst(500, 120, 3);
+    id(rf_bridge).send_ook_test_burst(500, 240, 8);
 ```
 
 The test emits an alternating OOK pulse train using 500 µs pulse spacing, 120 transitions, and 3 repeats, then restores the CC1101 to RX mode.
+
+
+## v1.3.1 TX strength and state logging
+
+This release keeps the verified Outprize decoder intact and improves the transmit test path:
+
+- Uses PA table `0xC0` for maximum test output.
+- Raises test repeats to 8 in the example buttons.
+- Logs estimated TX duration.
+- Logs CC1101 `MARCSTATE` before TX configuration, after TX configuration, after `STX`, before idle restore, and after idle restore.
+- Restores RX mode after each TX test.
+
+Use this release to compare SDR-visible output from the bridge against the OEM remote before continuing packet-shape tuning.

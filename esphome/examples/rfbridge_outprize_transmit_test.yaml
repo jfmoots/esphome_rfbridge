@@ -48,25 +48,25 @@ button:
     name: "Outprize TX Test 40 Percent OUT"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x600140);
+          id(rf_bridge).send_outprize_low24(0x600140, 8);
 
   - platform: template
     name: "Outprize TX Test Fan Off Awake"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x600040);
+          id(rf_bridge).send_outprize_low24(0x600040, 8);
 
   - platform: template
     name: "Outprize TX Test Power Off"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x600000);
+          id(rf_bridge).send_outprize_low24(0x600000, 8);
 
   - platform: template
     name: "Outprize TX Test 60 Percent OUT"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x600340);
+          id(rf_bridge).send_outprize_low24(0x600340, 8);
 
 
   - platform: template
@@ -79,4 +79,4 @@ button:
     name: "RF TX Hardware Test Burst"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_ook_test_burst(500, 120, 3);
+          id(rf_bridge).send_ook_test_burst(500, 240, 8);

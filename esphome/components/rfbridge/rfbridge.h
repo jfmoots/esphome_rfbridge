@@ -44,12 +44,12 @@ class RFBridgeComponent : public Component {
                      OutprizeVentCommand vent_command);
   bool send_outprize(uint32_t remote_id, uint8_t speed_percent, OutprizeDirection direction, bool rain_enabled,
                      OutprizeVentCommand vent_command);
-  bool send_outprize_low24(uint32_t low24, uint8_t repeats = 3);
+  bool send_outprize_low24(uint32_t low24, uint8_t repeats = 8);
   bool send_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats);
-  bool send_outprize_power_off(uint8_t repeats = 3) { return this->send_outprize_low24(0x600000, repeats); }
-  bool send_outprize_fan_off(uint8_t repeats = 3) { return this->send_outprize_low24(0x600040, repeats); }
+  bool send_outprize_power_off(uint8_t repeats = 8) { return this->send_outprize_low24(0x600000, repeats); }
+  bool send_outprize_fan_off(uint8_t repeats = 8) { return this->send_outprize_low24(0x600040, repeats); }
   bool replay_last_capture(uint8_t repeats = 1);
-  bool send_ook_test_burst(uint16_t pulse_us = 500, uint16_t pulse_count = 120, uint8_t repeats = 3);
+  bool send_ook_test_burst(uint16_t pulse_us = 500, uint16_t pulse_count = 240, uint8_t repeats = 8);
 
  protected:
   GPIOPin *cs_pin_{nullptr};
@@ -168,6 +168,7 @@ class RFBridgeComponent : public Component {
   uint32_t outprize_speed_base_(uint8_t speed_percent) const;
   void cc1101_configure_ook_async_tx_();
   void tx_write_data_(bool level);
+  void tx_log_marcstate_(const char *stage);
   void tx_send_outprize_frame_(uint32_t prefix, uint32_t low24);
   bool transmit_low24_(uint32_t remote_id, uint32_t low24, uint8_t repeats = 3);
   bool transmit_last_capture_(uint8_t repeats = 1);

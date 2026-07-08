@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.1 - TX Strength + State Logging
+
+- Keeps the verified Outprize decoder intact.
+- Keeps the experimental OOK TX path from v1.3.0.
+- Uses CC1101 PA table `0xC0` for maximum test output.
+- Increases example TX repeats to 8 for stronger SDR visibility.
+- Logs estimated TX duration for Outprize and OOK test bursts.
+- Logs CC1101 `MARCSTATE` around TX transitions and `STX` status.
+- Restores RX mode after transmit tests.
+
+# Changelog
+
 ## v1.3.0 - TX Hardware Verification
 
 - Adds `send_ook_test_burst(pulse_us, pulse_count, repeats)` for protocol-neutral CC1101 TX bring-up.

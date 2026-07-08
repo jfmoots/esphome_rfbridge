@@ -78,7 +78,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
   ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window verified Outprize decoder");
-  ESP_LOGCONFIG(TAG, "  TX Mode: Experimental CC1101 async OOK transmitter");
+  ESP_LOGCONFIG(TAG, "  TX Mode: Experimental CC1101 async OOK transmitter (strength + state logging)");
   ESP_LOGCONFIG(TAG, "  Diagnostic Logging: %s", YESNO(this->diagnostic_logging_));
   ESP_LOGCONFIG(TAG, "  Outprize Remote ID / 11-bit prefix: 0x%03X", this->outprize_remote_id_ & 0x7FF);
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
@@ -1089,15 +1089,23 @@ void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   // Keep the same known-good OOK profile and switch the radio to TX.  In
   // asynchronous serial mode, GDO0 is used as the serial data line.  This is an
   // experimental first transmitter; after each send we immediately restore RX.
+  ESP_LOGI(TAG, "Configuring CC1101 for 433.92 MHz OOK async TX (PA=0xC0 max test output)");
   this->cc1101_write_reg_(cc1101::IOCFG0, cc1101::GDO_SERIAL_DATA);
   this->cc1101_write_reg_(cc1101::PKTCTRL0, cc1101::PKTCTRL0_KNOWN_GOOD);
   this->cc1101_write_patable_(0xC0);
+  ESP_LOGI(TAG, "  IOCFG0   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG0));
+  ESP_LOGI(TAG, "  PKTCTRL0 = 0x%02X", this->cc1101_read_reg_(cc1101::PKTCTRL0));
 }
 
 void RFBridgeComponent::tx_write_data_(bool level) {
   if (this->gdo0_pin_ != nullptr) {
     this->gdo0_pin_->digital_write(level);
   }
+}
+
+void RFBridgeComponent::tx_log_marcstate_(const char *stage) {
+  const uint8_t marc = this->cc1101_read_status_(cc1101::MARCSTATE);
+  ESP_LOGI(TAG, "CC1101 TX state %-18s MARCSTATE=0x%02X", stage, marc);
 }
 
 void RFBridgeComponent::tx_send_outprize_frame_(uint32_t prefix, uint32_t low24) {
@@ -1137,21 +1145,28 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
   if (repeats == 0) {
     repeats = 1;
   }
-  if (repeats > 8) {
-    repeats = 8;
+  if (repeats > 12) {
+    repeats = 12;
   }
 
-  ESP_LOGI(TAG, "OUTPRIZE TX start prefix=0x%03X low24=0x%06X repeats=%u", prefix, low24 & 0xFFFFFF, repeats);
+  const uint32_t frame_duration_us = OUTPRIZE_TX_RESET_GAP_US + OUTPRIZE_TX_SYNC_US +
+      (OUTPRIZE_TX_BITS * (OUTPRIZE_TX_PULSE_US + OUTPRIZE_TX_ONE_GAP_US)) + OUTPRIZE_TX_INTER_FRAME_GAP_US;
+  ESP_LOGI(TAG, "OUTPRIZE TX start prefix=0x%03X low24=0x%06X repeats=%u est_duration=%u us",
+           prefix, low24 & 0xFFFFFF, repeats, frame_duration_us * repeats);
 
   // Pause RX while transmitting.  GDO0 normally acts as the CC1101 async data
   // output during receive; for async transmit we drive the same line from the ESP.
   this->rx_enabled_ = false;
+  this->tx_log_marcstate_("before idle");
   this->cc1101_configure_ook_async_tx_();
+  this->tx_log_marcstate_("after tx config");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
   this->tx_write_data_(false);
   delayMicroseconds(2000);
-  this->cc1101_strobe_(cc1101::STX);
+  const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
+  ESP_LOGI(TAG, "CC1101 TX strobe STX status=0x%02X", stx_status);
   delayMicroseconds(1000);
+  this->tx_log_marcstate_("after STX");
 
   for (uint8_t i = 0; i < repeats; i++) {
     this->tx_send_outprize_frame_(prefix, low24 & 0xFFFFFF);
@@ -1160,7 +1175,9 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
 
   this->tx_write_data_(false);
   delayMicroseconds(1000);
+  this->tx_log_marcstate_("before idle restore");
   this->cc1101_enter_idle_();
+  this->tx_log_marcstate_("after idle restore");
 
   // Restore RX mode and GDO0 input.
   this->gdo0_pin_->pin_mode(gpio::FLAG_INPUT);
@@ -1193,15 +1210,21 @@ bool RFBridgeComponent::transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pul
   if (repeats == 0) repeats = 1;
   if (repeats > 10) repeats = 10;
 
-  ESP_LOGI(TAG, "OOK TX hardware test start pulse=%u us count=%u repeats=%u", pulse_us, pulse_count, repeats);
+  const uint32_t total_duration_us = (static_cast<uint32_t>(pulse_us) * pulse_count + 10000UL) * repeats;
+  ESP_LOGI(TAG, "OOK TX hardware test start pulse=%u us count=%u repeats=%u est_duration=%u us",
+           pulse_us, pulse_count, repeats, total_duration_us);
 
   this->rx_enabled_ = false;
+  this->tx_log_marcstate_("before idle");
   this->cc1101_configure_ook_async_tx_();
+  this->tx_log_marcstate_("after tx config");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
   this->tx_write_data_(false);
   delayMicroseconds(2000);
-  this->cc1101_strobe_(cc1101::STX);
+  const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
+  ESP_LOGI(TAG, "CC1101 TX strobe STX status=0x%02X", stx_status);
   delayMicroseconds(1000);
+  this->tx_log_marcstate_("after STX");
 
   for (uint8_t r = 0; r < repeats; r++) {
     for (uint16_t i = 0; i < pulse_count; i++) {
@@ -1214,7 +1237,9 @@ bool RFBridgeComponent::transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pul
 
   this->tx_write_data_(false);
   delayMicroseconds(1000);
+  this->tx_log_marcstate_("before idle restore");
   this->cc1101_enter_idle_();
+  this->tx_log_marcstate_("after idle restore");
 
   this->gdo0_pin_->pin_mode(gpio::FLAG_INPUT);
   this->cc1101_configure_ook_async_rx_();
