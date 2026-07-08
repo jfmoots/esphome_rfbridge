@@ -83,7 +83,7 @@ button:
 
 
   - platform: template
-    name: "RF TX 5 Second Carrier Test"
+    name: "RF TX 500ms Carrier Test"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_ook_carrier_test(5000);
+          id(rf_bridge).send_ook_carrier_test(500);

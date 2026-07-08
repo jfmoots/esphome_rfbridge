@@ -97,7 +97,7 @@ Example lambda:
 The test emits an alternating OOK pulse train using 500 µs pulse spacing, 120 transitions, and 3 repeats, then restores the CC1101 to RX mode.
 
 
-## v1.3.2 TX strength and state logging
+## v1.3.3 Non-blocking carrier test
 
 This release keeps the verified Outprize decoder intact and improves the transmit test path:
 
@@ -110,6 +110,6 @@ This release keeps the verified Outprize decoder intact and improves the transmi
 Use this release to compare SDR-visible output from the bridge against the OEM remote before continuing packet-shape tuning.
 
 
-## v1.3.2 Long Carrier Test
+## v1.3.3 Non-blocking Carrier Test
 
-Use `id(rf_bridge).send_ook_carrier_test(5000);` from a template button to hold the CC1101 in async OOK TX for five seconds. This is intended only to verify RF output on an SDR waterfall.
+Use `id(rf_bridge).send_ook_carrier_test(500);` from a template button to hold the CC1101 in async OOK TX for a short non-blocking carrier test. The carrier is stopped from `loop()` and RX is restored after the timeout, avoiding API disconnects/watchdog stalls from long blocking button handlers.

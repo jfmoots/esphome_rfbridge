@@ -58,6 +58,10 @@ void RFBridgeComponent::setup() {
 }
 
 void RFBridgeComponent::loop() {
+  if (this->tx_carrier_active_) {
+    this->tx_carrier_loop_();
+    return;
+  }
   this->rx_poll_();
 }
 
@@ -78,7 +82,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
   ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window verified Outprize decoder");
-  ESP_LOGCONFIG(TAG, "  TX Mode: Experimental CC1101 async OOK transmitter (strength + state logging)");
+  ESP_LOGCONFIG(TAG, "  TX Mode: Experimental CC1101 async OOK transmitter (non-blocking carrier test)");
   ESP_LOGCONFIG(TAG, "  Diagnostic Logging: %s", YESNO(this->diagnostic_logging_));
   ESP_LOGCONFIG(TAG, "  Outprize Remote ID / 11-bit prefix: 0x%03X", this->outprize_remote_id_ & 0x7FF);
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
@@ -173,7 +177,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
   this->cc1101_write_reg_(cc1101::TEST1, 0x35);
   this->cc1101_write_reg_(cc1101::TEST0, 0x09);
 
-  this->cc1101_write_patable_(0xC0);
+  this->cc1101_write_patable_(CC1101_TX_PA_TEST);
 
   ESP_LOGI(TAG, "  IOCFG0   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG0));
   ESP_LOGI(TAG, "  IOCFG2   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG2));
@@ -1089,10 +1093,10 @@ void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   // Keep the same known-good OOK profile and switch the radio to TX.  In
   // asynchronous serial mode, GDO0 is used as the serial data line.  This is an
   // experimental first transmitter; after each send we immediately restore RX.
-  ESP_LOGI(TAG, "Configuring CC1101 for 433.92 MHz OOK async TX (PA=0xC0 max test output)");
+  ESP_LOGI(TAG, "Configuring CC1101 for 433.92 MHz OOK async TX (PA=0x%02X test output)", CC1101_TX_PA_TEST);
   this->cc1101_write_reg_(cc1101::IOCFG0, cc1101::GDO_SERIAL_DATA);
   this->cc1101_write_reg_(cc1101::PKTCTRL0, cc1101::PKTCTRL0_KNOWN_GOOD);
-  this->cc1101_write_patable_(0xC0);
+  this->cc1101_write_patable_(CC1101_TX_PA_TEST);
   ESP_LOGI(TAG, "  IOCFG0   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG0));
   ESP_LOGI(TAG, "  PKTCTRL0 = 0x%02X", this->cc1101_read_reg_(cc1101::PKTCTRL0));
 }
@@ -1198,20 +1202,24 @@ bool RFBridgeComponent::send_ook_test_burst(uint16_t pulse_us, uint16_t pulse_co
 
 
 bool RFBridgeComponent::send_ook_carrier_test(uint16_t duration_ms) {
-  return this->transmit_ook_carrier_test_(duration_ms);
+  return this->start_ook_carrier_test_(duration_ms);
 }
 
-bool RFBridgeComponent::transmit_ook_carrier_test_(uint16_t duration_ms) {
+bool RFBridgeComponent::start_ook_carrier_test_(uint16_t duration_ms) {
   if (!this->cc1101_configured_ || this->gdo0_pin_ == nullptr) {
     ESP_LOGE(TAG, "OOK carrier TX test unavailable; CC1101 configured=%s gdo0=%s", YESNO(this->cc1101_configured_),
              this->gdo0_pin_ == nullptr ? "missing" : "present");
     return false;
   }
+  if (this->tx_carrier_active_) {
+    ESP_LOGW(TAG, "OOK carrier TX test already active; ignoring new request");
+    return false;
+  }
 
   if (duration_ms < 100) duration_ms = 100;
-  if (duration_ms > 10000) duration_ms = 10000;
+  if (duration_ms > 5000) duration_ms = 5000;
 
-  ESP_LOGI(TAG, "OOK TX carrier test start duration=%u ms", duration_ms);
+  ESP_LOGI(TAG, "OOK TX carrier test scheduled duration=%u ms (non-blocking)", duration_ms);
 
   this->rx_enabled_ = false;
   this->tx_log_marcstate_("carrier before idle");
@@ -1219,8 +1227,8 @@ bool RFBridgeComponent::transmit_ook_carrier_test_(uint16_t duration_ms) {
   this->tx_log_marcstate_("carrier after tx config");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
 
-  // In async OOK mode this line is the data/envelope input. Drive it high for
-  // a long, visually obvious carrier/envelope test.
+  // In async OOK mode this line is the data/envelope input.  Keep it high while
+  // the non-blocking carrier state machine is active.
   this->tx_write_data_(true);
   delayMicroseconds(2000);
   const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
@@ -1228,8 +1236,30 @@ bool RFBridgeComponent::transmit_ook_carrier_test_(uint16_t duration_ms) {
   delayMicroseconds(1000);
   this->tx_log_marcstate_("carrier after STX");
 
-  delay(static_cast<uint32_t>(duration_ms));
+  this->tx_carrier_started_ms_ = millis();
+  this->tx_carrier_duration_ms_ = duration_ms;
+  this->tx_carrier_active_ = true;
+  ESP_LOGI(TAG, "OOK TX carrier active; will restore RX in %u ms", duration_ms);
+  return true;
+}
 
+void RFBridgeComponent::tx_carrier_loop_() {
+  if (!this->tx_carrier_active_) {
+    return;
+  }
+  if (millis() - this->tx_carrier_started_ms_ < this->tx_carrier_duration_ms_) {
+    return;
+  }
+  this->finish_ook_carrier_test_();
+}
+
+void RFBridgeComponent::finish_ook_carrier_test_() {
+  if (!this->tx_carrier_active_) {
+    return;
+  }
+
+  const uint16_t duration_ms = this->tx_carrier_duration_ms_;
+  this->tx_carrier_active_ = false;
   this->tx_write_data_(false);
   delayMicroseconds(1000);
   this->tx_log_marcstate_("carrier before idle restore");
@@ -1244,7 +1274,6 @@ bool RFBridgeComponent::transmit_ook_carrier_test_(uint16_t duration_ms) {
   this->rx_enabled_ = true;
 
   ESP_LOGI(TAG, "OOK TX carrier test complete duration=%u ms", duration_ms);
-  return true;
 }
 
 bool RFBridgeComponent::transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pulse_count, uint8_t repeats) {

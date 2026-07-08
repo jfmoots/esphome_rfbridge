@@ -50,7 +50,7 @@ class RFBridgeComponent : public Component {
   bool send_outprize_fan_off(uint8_t repeats = 8) { return this->send_outprize_low24(0x600040, repeats); }
   bool replay_last_capture(uint8_t repeats = 1);
   bool send_ook_test_burst(uint16_t pulse_us = 500, uint16_t pulse_count = 240, uint8_t repeats = 8);
-  bool send_ook_carrier_test(uint16_t duration_ms = 5000);
+  bool send_ook_carrier_test(uint16_t duration_ms = 500);
 
  protected:
   GPIOPin *cs_pin_{nullptr};
@@ -174,7 +174,9 @@ class RFBridgeComponent : public Component {
   bool transmit_low24_(uint32_t remote_id, uint32_t low24, uint8_t repeats = 3);
   bool transmit_last_capture_(uint8_t repeats = 1);
   bool transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pulse_count, uint8_t repeats);
-  bool transmit_ook_carrier_test_(uint16_t duration_ms);
+  bool start_ook_carrier_test_(uint16_t duration_ms);
+  void finish_ook_carrier_test_();
+  void tx_carrier_loop_();
 
   static constexpr uint16_t OUTPRIZE_TX_RESET_GAP_US = 7500;
   static constexpr uint16_t OUTPRIZE_TX_SYNC_US = 4500;
@@ -184,6 +186,12 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t OUTPRIZE_TX_INTER_FRAME_GAP_US = 9000;
   static constexpr uint16_t OUTPRIZE_TX_BITS = 35;
   static constexpr uint32_t OUTPRIZE_DEFAULT_PREFIX = 0x6CF;
+  static constexpr uint8_t CC1101_TX_PA_TEST = 0x84;
+
+  bool tx_carrier_active_{false};
+  uint32_t tx_carrier_started_ms_{0};
+  uint16_t tx_carrier_duration_ms_{0};
+
 };
 
 
