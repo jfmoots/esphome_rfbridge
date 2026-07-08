@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.4 - Drive GDO0 During TX
+
+- Updates firmware version to 1.3.4.
+- Makes the CC1101 async TX assumption explicit: ESP drives GDO0 as the TX data/envelope input.
+- Adds log lines when GDO0 is switched from RX input to TX output and back.
+- Forces GDO0 HIGH during the carrier test and LOW before restoring RX.
+- Keeps the non-blocking 500 ms carrier test from v1.3.3.
+- Keeps the verified Outprize decoder intact.
+
 ## v1.3.3 - Non-blocking Carrier Test
 
 - Updates firmware version to 1.3.3.

@@ -1,4 +1,9 @@
-# ESPHome RF Bridge v1.3.0
+# ESPHome RF Bridge
+
+## v1.3.4 - Drive GDO0 During TX
+
+This build makes the CC1101 async transmit model explicit. During receive, GDO0 is the CC1101 async data output and the ESP reads it. During transmit, the ESP temporarily switches the same GPIO to output and drives GDO0 as the CC1101 async TX data/envelope input. The 500 ms carrier test forces GDO0 HIGH while the CC1101 is in TX, then restores GDO0 to input and returns the radio to RX.
+
 
 Build metadata compile-fix release for OEM waveform replay testing.
 

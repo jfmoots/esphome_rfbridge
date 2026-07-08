@@ -82,7 +82,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
   ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window verified Outprize decoder");
-  ESP_LOGCONFIG(TAG, "  TX Mode: Experimental CC1101 async OOK transmitter (non-blocking carrier test)");
+  ESP_LOGCONFIG(TAG, "  TX Mode: Experimental CC1101 async OOK transmitter (ESP drives GDO0 TX data)");
   ESP_LOGCONFIG(TAG, "  Diagnostic Logging: %s", YESNO(this->diagnostic_logging_));
   ESP_LOGCONFIG(TAG, "  Outprize Remote ID / 11-bit prefix: 0x%03X", this->outprize_remote_id_ & 0x7FF);
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
@@ -1093,7 +1093,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   // Keep the same known-good OOK profile and switch the radio to TX.  In
   // asynchronous serial mode, GDO0 is used as the serial data line.  This is an
   // experimental first transmitter; after each send we immediately restore RX.
-  ESP_LOGI(TAG, "Configuring CC1101 for 433.92 MHz OOK async TX (PA=0x%02X test output)", CC1101_TX_PA_TEST);
+  ESP_LOGI(TAG, "Configuring CC1101 for 433.92 MHz OOK async TX; ESP drives GDO0 data input (PA=0x%02X)", CC1101_TX_PA_TEST);
   this->cc1101_write_reg_(cc1101::IOCFG0, cc1101::GDO_SERIAL_DATA);
   this->cc1101_write_reg_(cc1101::PKTCTRL0, cc1101::PKTCTRL0_KNOWN_GOOD);
   this->cc1101_write_patable_(CC1101_TX_PA_TEST);
@@ -1164,6 +1164,7 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
   this->tx_log_marcstate_("before idle");
   this->cc1101_configure_ook_async_tx_();
   this->tx_log_marcstate_("after tx config");
+  ESP_LOGI(TAG, "GDO0 direction: ESP output -> CC1101 async TX data input");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
   this->tx_write_data_(false);
   delayMicroseconds(2000);
@@ -1184,6 +1185,7 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
   this->tx_log_marcstate_("after idle restore");
 
   // Restore RX mode and GDO0 input.
+  ESP_LOGI(TAG, "GDO0 direction: ESP input <- CC1101 async RX data output");
   this->gdo0_pin_->pin_mode(gpio::FLAG_INPUT);
   this->cc1101_configure_ook_async_rx_();
   this->cc1101_enter_rx_();
@@ -1225,10 +1227,12 @@ bool RFBridgeComponent::start_ook_carrier_test_(uint16_t duration_ms) {
   this->tx_log_marcstate_("carrier before idle");
   this->cc1101_configure_ook_async_tx_();
   this->tx_log_marcstate_("carrier after tx config");
+  ESP_LOGI(TAG, "GDO0 direction: ESP output -> CC1101 async TX data input");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
 
-  // In async OOK mode this line is the data/envelope input.  Keep it high while
-  // the non-blocking carrier state machine is active.
+  // In CC1101 async OOK TX, GDO0 is the serial/envelope data input.
+  // Keep it high while the non-blocking carrier state machine is active.
+  ESP_LOGI(TAG, "GDO0 TX data forced HIGH for carrier envelope");
   this->tx_write_data_(true);
   delayMicroseconds(2000);
   const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
@@ -1260,12 +1264,14 @@ void RFBridgeComponent::finish_ook_carrier_test_() {
 
   const uint16_t duration_ms = this->tx_carrier_duration_ms_;
   this->tx_carrier_active_ = false;
+  ESP_LOGI(TAG, "GDO0 TX data forced LOW before carrier restore");
   this->tx_write_data_(false);
   delayMicroseconds(1000);
   this->tx_log_marcstate_("carrier before idle restore");
   this->cc1101_enter_idle_();
   this->tx_log_marcstate_("carrier after idle restore");
 
+  ESP_LOGI(TAG, "GDO0 direction: ESP input <- CC1101 async RX data output");
   this->gdo0_pin_->pin_mode(gpio::FLAG_INPUT);
   this->cc1101_configure_ook_async_rx_();
   this->cc1101_enter_rx_();
@@ -1298,6 +1304,7 @@ bool RFBridgeComponent::transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pul
   this->tx_log_marcstate_("before idle");
   this->cc1101_configure_ook_async_tx_();
   this->tx_log_marcstate_("after tx config");
+  ESP_LOGI(TAG, "GDO0 direction: ESP output -> CC1101 async TX data input");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
   this->tx_write_data_(false);
   delayMicroseconds(2000);
@@ -1321,6 +1328,7 @@ bool RFBridgeComponent::transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pul
   this->cc1101_enter_idle_();
   this->tx_log_marcstate_("after idle restore");
 
+  ESP_LOGI(TAG, "GDO0 direction: ESP input <- CC1101 async RX data output");
   this->gdo0_pin_->pin_mode(gpio::FLAG_INPUT);
   this->cc1101_configure_ook_async_rx_();
   this->cc1101_enter_rx_();
@@ -1361,6 +1369,7 @@ bool RFBridgeComponent::transmit_last_capture_(uint8_t repeats) {
 
   this->rx_enabled_ = false;
   this->cc1101_configure_ook_async_tx_();
+  ESP_LOGI(TAG, "GDO0 direction: ESP output -> CC1101 async TX data input");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
   this->tx_write_data_(false);
   delayMicroseconds(2000);
@@ -1383,6 +1392,7 @@ bool RFBridgeComponent::transmit_last_capture_(uint8_t repeats) {
   delayMicroseconds(1000);
   this->cc1101_enter_idle_();
 
+  ESP_LOGI(TAG, "GDO0 direction: ESP input <- CC1101 async RX data output");
   this->gdo0_pin_->pin_mode(gpio::FLAG_INPUT);
   this->cc1101_configure_ook_async_rx_();
   this->cc1101_enter_rx_();
