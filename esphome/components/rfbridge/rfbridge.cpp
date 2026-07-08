@@ -1196,6 +1196,57 @@ bool RFBridgeComponent::send_ook_test_burst(uint16_t pulse_us, uint16_t pulse_co
   return this->transmit_ook_test_burst_(pulse_us, pulse_count, repeats);
 }
 
+
+bool RFBridgeComponent::send_ook_carrier_test(uint16_t duration_ms) {
+  return this->transmit_ook_carrier_test_(duration_ms);
+}
+
+bool RFBridgeComponent::transmit_ook_carrier_test_(uint16_t duration_ms) {
+  if (!this->cc1101_configured_ || this->gdo0_pin_ == nullptr) {
+    ESP_LOGE(TAG, "OOK carrier TX test unavailable; CC1101 configured=%s gdo0=%s", YESNO(this->cc1101_configured_),
+             this->gdo0_pin_ == nullptr ? "missing" : "present");
+    return false;
+  }
+
+  if (duration_ms < 100) duration_ms = 100;
+  if (duration_ms > 10000) duration_ms = 10000;
+
+  ESP_LOGI(TAG, "OOK TX carrier test start duration=%u ms", duration_ms);
+
+  this->rx_enabled_ = false;
+  this->tx_log_marcstate_("carrier before idle");
+  this->cc1101_configure_ook_async_tx_();
+  this->tx_log_marcstate_("carrier after tx config");
+  this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
+
+  // In async OOK mode this line is the data/envelope input. Drive it high for
+  // a long, visually obvious carrier/envelope test.
+  this->tx_write_data_(true);
+  delayMicroseconds(2000);
+  const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
+  ESP_LOGI(TAG, "CC1101 TX carrier STX status=0x%02X", stx_status);
+  delayMicroseconds(1000);
+  this->tx_log_marcstate_("carrier after STX");
+
+  delay(static_cast<uint32_t>(duration_ms));
+
+  this->tx_write_data_(false);
+  delayMicroseconds(1000);
+  this->tx_log_marcstate_("carrier before idle restore");
+  this->cc1101_enter_idle_();
+  this->tx_log_marcstate_("carrier after idle restore");
+
+  this->gdo0_pin_->pin_mode(gpio::FLAG_INPUT);
+  this->cc1101_configure_ook_async_rx_();
+  this->cc1101_enter_rx_();
+  this->rx_reset_packet_(micros(), this->gdo0_pin_->digital_read());
+  this->rx_last_capture_ms_ = millis();
+  this->rx_enabled_ = true;
+
+  ESP_LOGI(TAG, "OOK TX carrier test complete duration=%u ms", duration_ms);
+  return true;
+}
+
 bool RFBridgeComponent::transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pulse_count, uint8_t repeats) {
   if (!this->cc1101_configured_ || this->gdo0_pin_ == nullptr) {
     ESP_LOGE(TAG, "OOK TX test unavailable; CC1101 configured=%s gdo0=%s", YESNO(this->cc1101_configured_),

@@ -80,3 +80,10 @@ button:
     on_press:
       - lambda: |-
           id(rf_bridge).send_ook_test_burst(500, 240, 8);
+
+
+  - platform: template
+    name: "RF TX 5 Second Carrier Test"
+    on_press:
+      - lambda: |-
+          id(rf_bridge).send_ook_carrier_test(5000);
