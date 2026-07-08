@@ -2,9 +2,11 @@
 
 ESPHome external component for a CC1101-based RF bridge used in the MooterHome Outprize vent fan reverse-engineering project.
 
-## v0.10.1 focus
+## v0.10.2 focus
 
-This release is a cleanup and robustness pass for the verified Outprize decoder path. The normal log path now prioritizes decoded `Low24` packet output. Full raw edge timings, histograms, symbol streams, and protocol-analyzer output are still available by setting `diagnostic_logging: true` in the `rfbridge:` block.
+This release makes the normal receive path protocol-oriented and quiet. The bridge now decodes first, logs compact protocol events, and only runs the expensive raw analyzer when `diagnostic_logging: true`. This leaves room for additional candidate decoders, such as TyreGuard, without slowing the normal Outprize path.
+
+RVLock is intentionally out of scope for RF rolling-code decoding in this project; that control path will use a cannibalized physical remote/button-push approach instead.
 
 ## ESPHome example
 
@@ -21,6 +23,16 @@ rfbridge:
   gdo0_pin: GPIO4
   diagnostic_logging: false
 ```
+
+## Normal logging
+
+With diagnostics off, successful Outprize captures are reduced to a compact event:
+
+```text
+OUTPRIZE low24=0x600340 confidence=excellent score=1155 candidates=12 edges=72 rssi=-49 dBm
+```
+
+Unknown captures are ignored at debug level unless diagnostics are enabled.
 
 ## Verified Outprize fields
 

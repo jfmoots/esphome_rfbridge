@@ -124,6 +124,7 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t OUTPRIZE_SYNC_US_MAX = 5200;
 
   bool diagnostic_logging_{false};
+  bool rx_last_outprize_like_{false};
   bool rx_enabled_{false};
   bool rx_have_level_{false};
   bool rx_last_level_{false};

@@ -372,8 +372,10 @@ void RFBridgeComponent::rx_poll_() {
   }
 
   this->rx_last_capture_ms_ = now_ms;
-  ESP_LOGI(TAG, "RSSI trigger: %d dBm >= %d dBm; capturing GDO0 for %u us",
-           rssi, RX_RSSI_ARM_DBM, RX_CAPTURE_WINDOW_US);
+  if (this->diagnostic_logging_) {
+    ESP_LOGI(TAG, "RSSI trigger: %d dBm >= %d dBm; capturing GDO0 for %u us",
+             rssi, RX_RSSI_ARM_DBM, RX_CAPTURE_WINDOW_US);
+  }
   this->rx_capture_window_(rssi);
 }
 
@@ -436,17 +438,23 @@ void RFBridgeComponent::rx_finish_capture_(uint32_t start_us, uint32_t end_us, i
   this->rx_last_avg_gap_us_ = this->rx_edge_count_ > 0 ? static_cast<uint16_t>(sum_gap / this->rx_edge_count_) : 0;
   this->rx_last_rssi_dbm_ = this->cc1101_read_rssi_dbm_();
 
-  ESP_LOGI(TAG, "RF RSSI-gated capture #%u: edges=%u duration=%u us trigger_rssi=%d dBm end_rssi=%d dBm gaps[min/avg/max]=%u/%u/%u us",
-           this->rx_packets_seen_, this->rx_last_packet_edges_, this->rx_last_packet_duration_us_,
-           trigger_rssi_dbm, this->rx_last_rssi_dbm_, this->rx_last_min_gap_us_, this->rx_last_avg_gap_us_,
-           this->rx_last_max_gap_us_);
+  if (this->diagnostic_logging_) {
+    ESP_LOGI(TAG, "RF RSSI-gated capture #%u: edges=%u duration=%u us trigger_rssi=%d dBm end_rssi=%d dBm gaps[min/avg/max]=%u/%u/%u us",
+             this->rx_packets_seen_, this->rx_last_packet_edges_, this->rx_last_packet_duration_us_,
+             trigger_rssi_dbm, this->rx_last_rssi_dbm_, this->rx_last_min_gap_us_, this->rx_last_avg_gap_us_,
+             this->rx_last_max_gap_us_);
+  }
 
+  this->rx_last_outprize_like_ = false;
   const bool decoded = this->rx_log_outprize_decode_(this->rx_packets_seen_);
 
-  if (this->diagnostic_logging_ || !decoded) {
+  if (this->diagnostic_logging_) {
     this->rx_log_raw_timings_(this->rx_packets_seen_);
     this->rx_log_pulse_histogram_(this->rx_packets_seen_);
     this->rx_log_protocol_analysis_(this->rx_packets_seen_);
+  } else if (!decoded && !this->rx_last_outprize_like_) {
+    ESP_LOGD(TAG, "RF capture #%u ignored: protocol=unknown edges=%u rssi=%d dBm",
+             this->rx_packets_seen_, this->rx_last_packet_edges_, trigger_rssi_dbm);
   }
 }
 
@@ -858,9 +866,13 @@ uint16_t RFBridgeComponent::rx_score_outprize_candidate_(OutprizeDecodeCandidate
 }
 
 bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
+  this->rx_last_outprize_like_ = false;
+
   if (this->rx_edge_count_ < OUTPRIZE_MIN_EDGES || this->rx_edge_count_ > OUTPRIZE_MAX_EDGES) {
-    ESP_LOGD(TAG, "Capture #%u Outprize decoder: skipped (edge count %u outside %u-%u)",
-             capture_no, this->rx_edge_count_, OUTPRIZE_MIN_EDGES, OUTPRIZE_MAX_EDGES);
+    if (this->diagnostic_logging_) {
+      ESP_LOGD(TAG, "Capture #%u Outprize decoder: skipped (edge count %u outside %u-%u)",
+               capture_no, this->rx_edge_count_, OUTPRIZE_MIN_EDGES, OUTPRIZE_MAX_EDGES);
+    }
     return false;
   }
 
@@ -879,10 +891,14 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
   }
 
   if (shortish < 18 || longish < 6) {
-    ESP_LOGD(TAG, "Capture #%u Outprize decoder: skipped (short=%u long=%u sync=%u)",
-             capture_no, shortish, longish, syncish);
+    if (this->diagnostic_logging_) {
+      ESP_LOGD(TAG, "Capture #%u Outprize decoder: skipped (short=%u long=%u sync=%u)",
+               capture_no, shortish, longish, syncish);
+    }
     return false;
   }
+
+  this->rx_last_outprize_like_ = true;
 
   OutprizeDecodeCandidate best{};
   uint16_t valid_candidates = 0;
@@ -937,11 +953,26 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
     hexbuf[hpos - 1] = '\0';
   }
 
+  const char *confidence = "low";
+  if (best.score >= 1130) {
+    confidence = "excellent";
+  } else if (best.score >= 1100) {
+    confidence = "good";
+  } else if (best.score >= 1050) {
+    confidence = "fair";
+  }
+
+  if (!this->diagnostic_logging_) {
+    ESP_LOGI(TAG, "OUTPRIZE low24=0x%06X confidence=%s score=%u candidates=%u edges=%u rssi=%d dBm",
+             best.low24, confidence, best.score, valid_candidates, this->rx_edge_count_, this->rx_last_trigger_rssi_dbm_);
+    return true;
+  }
+
   ESP_LOGI(TAG, "===== OUTPRIZE_PACKET =====");
   ESP_LOGI(TAG, "Decoder: PWM gap short=0 long=1");
   ESP_LOGI(TAG, "Capture: #%u RSSI trigger=%d dBm end=%d dBm", capture_no, this->rx_last_trigger_rssi_dbm_, this->rx_last_rssi_dbm_);
-  ESP_LOGI(TAG, "Edges: %u  DecodeStartIndex: %u  StopIndex: %u  Bits: %u  Candidates: %u  Score: %u",
-           this->rx_edge_count_, best.start_index, best.stop_index, best.bit_count, valid_candidates, best.score);
+  ESP_LOGI(TAG, "Edges: %u  DecodeStartIndex: %u  StopIndex: %u  Bits: %u  Candidates: %u  Score: %u  Confidence: %s",
+           this->rx_edge_count_, best.start_index, best.stop_index, best.bit_count, valid_candidates, best.score, confidence);
   ESP_LOGI(TAG, "Binary: %s", binary);
   ESP_LOGI(TAG, "Hex: %s", hexbuf);
   ESP_LOGI(TAG, "Low24: 0x%06X", best.low24);
