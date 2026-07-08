@@ -9,6 +9,7 @@ CONF_MOSI_PIN = "mosi_pin"
 CONF_MISO_PIN = "miso_pin"
 CONF_GDO0_PIN = "gdo0_pin"
 CONF_GDO2_PIN = "gdo2_pin"
+CONF_DIAGNOSTIC_LOGGING = "diagnostic_logging"
 
 rfbridge_ns = cg.esphome_ns.namespace("rfbridge")
 RFBridgeComponent = rfbridge_ns.class_("RFBridgeComponent", cg.Component)
@@ -22,6 +23,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Required(CONF_MISO_PIN): pins.gpio_input_pin_schema,
         cv.Optional(CONF_GDO0_PIN): pins.gpio_input_pin_schema,
         cv.Optional(CONF_GDO2_PIN): pins.gpio_input_pin_schema,
+        cv.Optional(CONF_DIAGNOSTIC_LOGGING, default=False): cv.boolean,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -40,3 +42,5 @@ async def to_code(config):
 
     if CONF_GDO2_PIN in config:
         cg.add(var.set_gdo2_pin(await cg.gpio_pin_expression(config[CONF_GDO2_PIN])))
+
+    cg.add(var.set_diagnostic_logging(config[CONF_DIAGNOSTIC_LOGGING]))

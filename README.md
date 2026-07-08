@@ -1,40 +1,16 @@
 # ESPHome RF Bridge
 
-ESPHome external component for an ESP32 + CC1101 RF bridge.
+ESPHome external component for a CC1101-based RF bridge used in the MooterHome Outprize vent fan reverse-engineering project.
 
-## v0.10.0
+## v0.10.1 focus
 
-This release adds the first Outprize-specific decoder pass on top of the generic RF analyzer.
+This release is a cleanup and robustness pass for the verified Outprize decoder path. The normal log path now prioritizes decoded `Low24` packet output. Full raw edge timings, histograms, symbol streams, and protocol-analyzer output are still available by setting `diagnostic_logging: true` in the `rfbridge:` block.
 
-The receiver still uses the proven RSSI-gated capture strategy:
-
-- arm when RSSI rises above -80 dBm
-- capture GDO0 for 140 ms
-- log raw timings, histograms, normalized symbols, fingerprints, and motifs
-- additionally attempt Outprize PWM gap decoding
-
-Expected successful Outprize output includes:
-
-```text
-===== OUTPRIZE_PACKET_CANDIDATE =====
-Decoder: PWM gap short=0 long=1
-Edges: 70  DecodeStartIndex: ...  Bits: ...
-Binary: ...
-Hex: ...
-Low24: 0x......
-====================================
-```
-
-## ESPHome YAML
+## ESPHome example
 
 ```yaml
 external_components:
-  - source:
-      type: git
-      url: https://github.com/jfmoots/esphome_rfbridge
-      ref: main
-      path: esphome/components
-    refresh: 0s
+  - source: github://jfmoots/esphome_rfbridge
     components: [rfbridge]
 
 rfbridge:
@@ -43,4 +19,15 @@ rfbridge:
   mosi_pin: GPIO23
   miso_pin: GPIO19
   gdo0_pin: GPIO4
+  diagnostic_logging: false
 ```
+
+## Verified Outprize fields
+
+- Fixed packet family: `0x60xxxx`
+- Direction modifier: `+0x20`
+- Rain modifier: `+0x10`
+- Vent close/open/stop nibble: `+0x04`, `+0x08`, `+0x0C`
+- POWER OFF: `0x600000`
+- POWER ON / wake / fan-off awake: `0x600040`
+- FAN button toggles fan-only: when off it sends remembered speed state; when on it sends `0x600040`.

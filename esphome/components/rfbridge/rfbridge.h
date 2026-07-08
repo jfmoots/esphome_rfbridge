@@ -32,6 +32,7 @@ class RFBridgeComponent : public Component {
   void set_miso_pin(GPIOPin *pin) { this->miso_pin_ = pin; }
   void set_gdo0_pin(GPIOPin *pin) { this->gdo0_pin_ = pin; }
   void set_gdo2_pin(GPIOPin *pin) { this->gdo2_pin_ = pin; }
+  void set_diagnostic_logging(bool diagnostic_logging) { this->diagnostic_logging_ = diagnostic_logging; }
 
   uint32_t encode_outprize_low24(uint8_t speed_percent, OutprizeDirection direction, bool rain_enabled,
                                  OutprizeVentCommand vent_command) const;
@@ -79,8 +80,20 @@ class RFBridgeComponent : public Component {
   void rx_log_raw_timings_(uint32_t capture_no);
   void rx_log_pulse_histogram_(uint32_t capture_no);
   void rx_log_protocol_analysis_(uint32_t capture_no);
-  void rx_log_outprize_decode_(uint32_t capture_no);
-  bool rx_outprize_decode_from_index_(uint16_t start_index, bool *bits, uint16_t *bit_count) const;
+  bool rx_log_outprize_decode_(uint32_t capture_no);
+  struct OutprizeDecodeCandidate {
+    bool valid{false};
+    bool bits[64]{};
+    uint16_t bit_count{0};
+    uint16_t start_index{0};
+    uint16_t stop_index{0};
+    uint16_t invalid_count{0};
+    uint16_t score{0};
+    uint32_t low24{0};
+  };
+
+  bool rx_outprize_decode_from_index_(uint16_t start_index, OutprizeDecodeCandidate *candidate) const;
+  uint16_t rx_score_outprize_candidate_(OutprizeDecodeCandidate *candidate) const;
   uint16_t rx_normalize_pulse_(uint16_t pulse_us) const;
   uint32_t rx_capture_fingerprint_() const;
   void rx_reset_packet_(uint32_t now_us, bool level);
@@ -110,6 +123,7 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t OUTPRIZE_SYNC_US_MIN = 3800;
   static constexpr uint16_t OUTPRIZE_SYNC_US_MAX = 5200;
 
+  bool diagnostic_logging_{false};
   bool rx_enabled_{false};
   bool rx_have_level_{false};
   bool rx_last_level_{false};

@@ -1,14 +1,18 @@
 # Changelog
 
+## v0.10.1 – Decoder Robustness and Lean Logging
+
+- Keeps the verified Outprize protocol model unchanged.
+- Promotes normal receive path to lean decode-first logging.
+- Adds optional `diagnostic_logging` for raw timings, histograms, symbols, and analyzer output.
+- Scans multiple plausible PWM alignments and scores decoded candidates.
+- Prefers verified `0x60xxxx` Outprize payload family when selecting the best decode.
+- Logs Outprize-like captures that do not decode as `candidate_no_decode`.
+
 ## v0.10.0 – Outprize Candidate Decoder
 
-Adds first protocol-specific decoder output for Outprize RF captures.
-
-Changes:
-- Keeps the RSSI-gated fixed-window capture pipeline.
-- Keeps raw pulse, histogram, fingerprint, normalized stream, and symbol analyzer output.
-- Adds Outprize PWM gap candidate detection.
-- Decodes short-gap/long-gap pulse pairs into bits.
-- Logs binary, grouped hex, and Low24 values for comparison with previous captures.
-- Stores edge levels during capture for future signed raw-output work.
-
+- Added first Outprize-specific decoder output.
+- Detects Outprize-like PWM gap captures.
+- Decodes short gap = 0 and long gap = 1.
+- Logs binary, grouped hex, and Low24 values.
+- Keeps v0.9.0 fingerprint/symbol analyzer output.

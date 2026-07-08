@@ -26,12 +26,11 @@ external_components:
   - source: github://jfmoots/esphome_rfbridge
     components: [rfbridge]
 
-spi:
-  clk_pin: GPIO18
-  mosi_pin: GPIO23
-  miso_pin: GPIO19
-
 rfbridge:
   id: rf_bridge
   cs_pin: GPIO5
+  sck_pin: GPIO18
+  mosi_pin: GPIO23
+  miso_pin: GPIO19
   gdo0_pin: GPIO4
+  diagnostic_logging: false

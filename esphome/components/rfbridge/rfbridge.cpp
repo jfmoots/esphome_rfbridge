@@ -77,7 +77,8 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  CC1101 PARTNUM: 0x%02X", this->cc1101_partnum_);
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
-  ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window Outprize candidate decoder");
+  ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window Outprize decoder");
+  ESP_LOGCONFIG(TAG, "  Diagnostic Logging: %s", YESNO(this->diagnostic_logging_));
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
   ESP_LOGCONFIG(TAG, "  RX Capture Window: %u us", RX_CAPTURE_WINDOW_US);
   ESP_LOGCONFIG(TAG, "  RX Packets Seen: %u", this->rx_packets_seen_);
@@ -440,10 +441,13 @@ void RFBridgeComponent::rx_finish_capture_(uint32_t start_us, uint32_t end_us, i
            trigger_rssi_dbm, this->rx_last_rssi_dbm_, this->rx_last_min_gap_us_, this->rx_last_avg_gap_us_,
            this->rx_last_max_gap_us_);
 
-  this->rx_log_raw_timings_(this->rx_packets_seen_);
-  this->rx_log_pulse_histogram_(this->rx_packets_seen_);
-  this->rx_log_protocol_analysis_(this->rx_packets_seen_);
-  this->rx_log_outprize_decode_(this->rx_packets_seen_);
+  const bool decoded = this->rx_log_outprize_decode_(this->rx_packets_seen_);
+
+  if (this->diagnostic_logging_ || !decoded) {
+    this->rx_log_raw_timings_(this->rx_packets_seen_);
+    this->rx_log_pulse_histogram_(this->rx_packets_seen_);
+    this->rx_log_protocol_analysis_(this->rx_packets_seen_);
+  }
 }
 
 void RFBridgeComponent::rx_log_raw_timings_(uint32_t capture_no) {
@@ -764,34 +768,100 @@ void RFBridgeComponent::rx_log_protocol_analysis_(uint32_t capture_no) {
 }
 
 
-bool RFBridgeComponent::rx_outprize_decode_from_index_(uint16_t start_index, bool *bits, uint16_t *bit_count) const {
-  *bit_count = 0;
+bool RFBridgeComponent::rx_outprize_decode_from_index_(uint16_t start_index, OutprizeDecodeCandidate *candidate) const {
+  *candidate = OutprizeDecodeCandidate{};
+  candidate->start_index = start_index;
+  candidate->stop_index = start_index;
 
-  for (uint16_t i = start_index; i + 1 < this->rx_edge_count_ && *bit_count < 64; i += 2) {
+  for (uint16_t i = start_index; i + 1 < this->rx_edge_count_ && candidate->bit_count < 64; i += 2) {
     const uint16_t pulse = this->rx_edges_[i];
     const uint16_t gap = this->rx_edges_[i + 1];
 
-    if (pulse < OUTPRIZE_SHORT_US_MIN || pulse > OUTPRIZE_SHORT_US_MAX) {
+    // Outprize uses a short low pulse followed by a data-width high gap.
+    // Be slightly more tolerant on pulse width because real captures sometimes
+    // quantize a clean ~560us pulse as ~320/768us at the edges of the window.
+    if (pulse < 300 || pulse > 850) {
+      if (candidate->bit_count >= 24) {
+        break;
+      }
+      candidate->invalid_count++;
       return false;
     }
 
-    if (gap >= OUTPRIZE_SHORT_US_MIN && gap <= OUTPRIZE_SHORT_US_MAX) {
-      bits[(*bit_count)++] = false;
+    if (gap >= OUTPRIZE_SHORT_US_MIN && gap <= 850) {
+      candidate->bits[candidate->bit_count++] = false;
     } else if (gap >= OUTPRIZE_LONG_US_MIN && gap <= OUTPRIZE_LONG_US_MAX) {
-      bits[(*bit_count)++] = true;
+      candidate->bits[candidate->bit_count++] = true;
     } else {
+      if (candidate->bit_count >= 24) {
+        break;
+      }
+      candidate->invalid_count++;
       return false;
     }
+
+    candidate->stop_index = i + 1;
   }
 
-  return *bit_count >= 24 && *bit_count <= 40;
+  if (candidate->bit_count < 24 || candidate->bit_count > 40) {
+    return false;
+  }
+
+  uint32_t low24 = 0;
+  const uint16_t low24_start = candidate->bit_count > 24 ? candidate->bit_count - 24 : 0;
+  for (uint16_t i = low24_start; i < candidate->bit_count; i++) {
+    low24 = (low24 << 1) | (candidate->bits[i] ? 1UL : 0UL);
+  }
+  candidate->low24 = low24 & 0xFFFFFF;
+  candidate->score = this->rx_score_outprize_candidate_(candidate);
+  candidate->valid = true;
+  return true;
 }
 
-void RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
+uint16_t RFBridgeComponent::rx_score_outprize_candidate_(OutprizeDecodeCandidate *candidate) const {
+  uint16_t score = candidate->bit_count;
+  const uint32_t low24 = candidate->low24;
+
+  // All verified Outprize packets in this project have the fixed 0x60 high byte.
+  if ((low24 & 0xFF0000UL) == 0x600000UL) {
+    score += 1000;
+  }
+
+  // Known vent command nibble values: idle/off, close, open, stop.
+  const uint8_t vent = static_cast<uint8_t>(low24 & 0x0F);
+  if (vent == 0x00 || vent == 0x04 || vent == 0x08 || vent == 0x0C) {
+    score += 100;
+  }
+
+  // Speed/rain/direction field should be one of the documented Gray-code states.
+  const uint8_t state_nibble = static_cast<uint8_t>((low24 >> 4) & 0x0F);
+  switch (state_nibble) {
+    case 0x0:
+    case 0x1:
+    case 0x2:
+    case 0x3:
+    case 0x4:
+    case 0x5:
+    case 0x6:
+    case 0x7:
+      score += 20;
+      break;
+    default:
+      break;
+  }
+
+  if (candidate->invalid_count > 0) {
+    score = candidate->invalid_count >= score ? 0 : score - candidate->invalid_count;
+  }
+
+  return score;
+}
+
+bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
   if (this->rx_edge_count_ < OUTPRIZE_MIN_EDGES || this->rx_edge_count_ > OUTPRIZE_MAX_EDGES) {
-    ESP_LOGI(TAG, "Capture #%u Outprize decoder: skipped (edge count %u outside %u-%u)",
+    ESP_LOGD(TAG, "Capture #%u Outprize decoder: skipped (edge count %u outside %u-%u)",
              capture_no, this->rx_edge_count_, OUTPRIZE_MIN_EDGES, OUTPRIZE_MAX_EDGES);
-    return;
+    return false;
   }
 
   uint16_t shortish = 0;
@@ -809,60 +879,50 @@ void RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
   }
 
   if (shortish < 18 || longish < 6) {
-    ESP_LOGI(TAG, "Capture #%u Outprize decoder: skipped (short=%u long=%u sync=%u)",
+    ESP_LOGD(TAG, "Capture #%u Outprize decoder: skipped (short=%u long=%u sync=%u)",
              capture_no, shortish, longish, syncish);
-    return;
+    return false;
   }
 
-  bool best_bits[64]{};
-  uint16_t best_bit_count = 0;
-  uint16_t best_start = 0xFFFF;
+  OutprizeDecodeCandidate best{};
+  uint16_t valid_candidates = 0;
 
-  // Prefer the first valid short pulse after a sync gap when present, but also
-  // scan every possible short-pulse alignment. RSSI-gated captures can start
-  // after the sync gap, so a sync-only strategy misses clean frames.
-  for (uint16_t i = 0; i < this->rx_edge_count_; i++) {
-    bool trial_bits[64]{};
-    uint16_t trial_count = 0;
-
-    if (this->rx_edges_[i] < OUTPRIZE_SHORT_US_MIN || this->rx_edges_[i] > OUTPRIZE_SHORT_US_MAX) {
+  // Scan every plausible pulse alignment and use the score to prefer the
+  // verified 0x60xxxx packet family over a merely-longer but shifted decode.
+  for (uint16_t i = 0; i + 1 < this->rx_edge_count_; i++) {
+    if (this->rx_edges_[i] < 300 || this->rx_edges_[i] > 850) {
       continue;
     }
-    if (!this->rx_outprize_decode_from_index_(i, trial_bits, &trial_count)) {
+
+    OutprizeDecodeCandidate trial{};
+    if (!this->rx_outprize_decode_from_index_(i, &trial)) {
       continue;
     }
-    if (trial_count > best_bit_count) {
-      best_bit_count = trial_count;
-      best_start = i;
-      for (uint16_t j = 0; j < trial_count; j++) {
-        best_bits[j] = trial_bits[j];
-      }
+
+    valid_candidates++;
+    if (!best.valid || trial.score > best.score ||
+        (trial.score == best.score && trial.bit_count > best.bit_count)) {
+      best = trial;
     }
   }
 
-  if (best_bit_count == 0) {
-    ESP_LOGI(TAG, "Capture #%u Outprize decoder: candidate timing present, but no valid PWM gap alignment", capture_no);
-    return;
+  if (!best.valid) {
+    ESP_LOGI(TAG, "Capture #%u Outprize decoder: candidate_no_decode edges=%u short=%u long=%u sync=%u",
+             capture_no, this->rx_edge_count_, shortish, longish, syncish);
+    return false;
   }
-
-  uint32_t low24 = 0;
-  const uint16_t low24_start = best_bit_count > 24 ? best_bit_count - 24 : 0;
-  for (uint16_t i = low24_start; i < best_bit_count; i++) {
-    low24 = (low24 << 1) | (best_bits[i] ? 1UL : 0UL);
-  }
-  low24 &= 0xFFFFFF;
 
   char binary[72]{};
-  for (uint16_t i = 0; i < best_bit_count && i < sizeof(binary) - 1; i++) {
-    binary[i] = best_bits[i] ? '1' : '0';
+  for (uint16_t i = 0; i < best.bit_count && i < sizeof(binary) - 1; i++) {
+    binary[i] = best.bits[i] ? '1' : '0';
   }
 
   char hexbuf[48]{};
   uint16_t hpos = 0;
   uint8_t nibble = 0;
   uint8_t used = 0;
-  for (uint16_t i = 0; i < best_bit_count && hpos + 3 < sizeof(hexbuf); i++) {
-    nibble = static_cast<uint8_t>((nibble << 1) | (best_bits[i] ? 1 : 0));
+  for (uint16_t i = 0; i < best.bit_count && hpos + 3 < sizeof(hexbuf); i++) {
+    nibble = static_cast<uint8_t>((nibble << 1) | (best.bits[i] ? 1 : 0));
     used++;
     if (used == 4) {
       hpos += snprintf(hexbuf + hpos, sizeof(hexbuf) - hpos, "%X ", nibble);
@@ -877,15 +937,17 @@ void RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
     hexbuf[hpos - 1] = '\0';
   }
 
-  ESP_LOGI(TAG, "===== OUTPRIZE_PACKET_CANDIDATE =====");
+  ESP_LOGI(TAG, "===== OUTPRIZE_PACKET =====");
   ESP_LOGI(TAG, "Decoder: PWM gap short=0 long=1");
   ESP_LOGI(TAG, "Capture: #%u RSSI trigger=%d dBm end=%d dBm", capture_no, this->rx_last_trigger_rssi_dbm_, this->rx_last_rssi_dbm_);
-  ESP_LOGI(TAG, "Edges: %u  DecodeStartIndex: %u  Bits: %u", this->rx_edge_count_, best_start, best_bit_count);
+  ESP_LOGI(TAG, "Edges: %u  DecodeStartIndex: %u  StopIndex: %u  Bits: %u  Candidates: %u  Score: %u",
+           this->rx_edge_count_, best.start_index, best.stop_index, best.bit_count, valid_candidates, best.score);
   ESP_LOGI(TAG, "Binary: %s", binary);
   ESP_LOGI(TAG, "Hex: %s", hexbuf);
-  ESP_LOGI(TAG, "Low24: 0x%06X", low24);
+  ESP_LOGI(TAG, "Low24: 0x%06X", best.low24);
   ESP_LOGI(TAG, "Timing counts: short=%u long=%u sync=%u", shortish, longish, syncish);
   ESP_LOGI(TAG, "====================================");
+  return true;
 }
 
 void RFBridgeComponent::rx_reset_packet_(uint32_t now_us, bool level) {
