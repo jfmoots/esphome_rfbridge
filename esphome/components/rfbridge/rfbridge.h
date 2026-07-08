@@ -168,8 +168,10 @@ class RFBridgeComponent : public Component {
 
   uint32_t outprize_speed_base_(uint8_t speed_percent) const;
   void cc1101_configure_ook_async_tx_();
+  bool cc1101_calibrate_for_tx_();
   void tx_write_data_(bool level);
   void tx_log_marcstate_(const char *stage);
+  void tx_dump_status_(const char *stage);
   void tx_send_outprize_frame_(uint32_t prefix, uint32_t low24);
   bool transmit_low24_(uint32_t remote_id, uint32_t low24, uint8_t repeats = 3);
   bool transmit_last_capture_(uint8_t repeats = 1);
@@ -186,7 +188,7 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t OUTPRIZE_TX_INTER_FRAME_GAP_US = 9000;
   static constexpr uint16_t OUTPRIZE_TX_BITS = 35;
   static constexpr uint32_t OUTPRIZE_DEFAULT_PREFIX = 0x6CF;
-  static constexpr uint8_t CC1101_TX_PA_TEST = 0x84;
+  static constexpr uint8_t CC1101_TX_PA_TEST = 0xC0;
 
   bool tx_carrier_active_{false};
   uint32_t tx_carrier_started_ms_{0};

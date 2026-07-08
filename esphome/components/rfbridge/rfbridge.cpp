@@ -1089,16 +1089,80 @@ bool RFBridgeComponent::send_outprize_low24(uint32_t remote_id, uint32_t low24, 
 
 void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   this->cc1101_enter_idle_();
+  this->cc1101_strobe_(cc1101::SFTX);
 
-  // Keep the same known-good OOK profile and switch the radio to TX.  In
-  // asynchronous serial mode, GDO0 is used as the serial data line.  This is an
-  // experimental first transmitter; after each send we immediately restore RX.
-  ESP_LOGI(TAG, "Configuring CC1101 for 433.92 MHz OOK async TX; ESP drives GDO0 data input (PA=0x%02X)", CC1101_TX_PA_TEST);
+  // v1.3.5 deliberately programs a full async OOK TX profile instead of
+  // inheriting the RX/sniffer profile.  The RX decoder is restored after each
+  // transmission by cc1101_configure_ook_async_rx_().
+  ESP_LOGI(TAG, "Configuring CC1101 full async OOK TX profile at 433.92 MHz (PA=0x%02X)", CC1101_TX_PA_TEST);
+
+  this->cc1101_write_reg_(cc1101::IOCFG2, cc1101::GDO_IOCFG2_KNOWN_GOOD);
+  this->cc1101_write_reg_(cc1101::IOCFG1, 0x2E);
   this->cc1101_write_reg_(cc1101::IOCFG0, cc1101::GDO_SERIAL_DATA);
-  this->cc1101_write_reg_(cc1101::PKTCTRL0, cc1101::PKTCTRL0_KNOWN_GOOD);
+  this->cc1101_write_reg_(cc1101::FIFOTHR, 0x47);
+  this->cc1101_write_reg_(cc1101::SYNC1, 0xD3);
+  this->cc1101_write_reg_(cc1101::SYNC0, 0x91);
+  this->cc1101_write_reg_(cc1101::PKTLEN, 0xFF);
+  this->cc1101_write_reg_(cc1101::PKTCTRL1, 0x04);
+  this->cc1101_write_reg_(cc1101::PKTCTRL0, cc1101::PKTCTRL0_ASYNC_INFINITE);
+  this->cc1101_write_reg_(cc1101::ADDR, 0x00);
+  this->cc1101_write_reg_(cc1101::CHANNR, 0x00);
+  this->cc1101_write_reg_(cc1101::FSCTRL1, 0x06);
+  this->cc1101_write_reg_(cc1101::FSCTRL0, 0x00);
+  this->cc1101_write_reg_(cc1101::FREQ2, 0x10);
+  this->cc1101_write_reg_(cc1101::FREQ1, 0xB0);
+  this->cc1101_write_reg_(cc1101::FREQ0, 0x71);
+  this->cc1101_write_reg_(cc1101::MDMCFG4, 0xF6);
+  this->cc1101_write_reg_(cc1101::MDMCFG3, 0x43);
+  this->cc1101_write_reg_(cc1101::MDMCFG2, 0x30);
+  this->cc1101_write_reg_(cc1101::MDMCFG1, 0x22);
+  this->cc1101_write_reg_(cc1101::MDMCFG0, 0xF8);
+  this->cc1101_write_reg_(cc1101::DEVIATN, 0x00);
+  this->cc1101_write_reg_(cc1101::MCSM2, 0x07);
+  this->cc1101_write_reg_(cc1101::MCSM1, 0x30);
+  this->cc1101_write_reg_(cc1101::MCSM0, 0x18);
+  this->cc1101_write_reg_(cc1101::FOCCFG, 0x16);
+  this->cc1101_write_reg_(cc1101::BSCFG, 0x6C);
+  this->cc1101_write_reg_(cc1101::AGCCTRL2, 0x04);
+  this->cc1101_write_reg_(cc1101::AGCCTRL1, 0x00);
+  this->cc1101_write_reg_(cc1101::AGCCTRL0, 0x91);
+  this->cc1101_write_reg_(cc1101::FREND1, 0x56);
+  this->cc1101_write_reg_(cc1101::FREND0, 0x11);
+  this->cc1101_write_reg_(cc1101::FSCAL3, 0xE9);
+  this->cc1101_write_reg_(cc1101::FSCAL2, 0x2A);
+  this->cc1101_write_reg_(cc1101::FSCAL1, 0x00);
+  this->cc1101_write_reg_(cc1101::FSCAL0, 0x1F);
+  this->cc1101_write_reg_(cc1101::TEST2, 0x81);
+  this->cc1101_write_reg_(cc1101::TEST1, 0x35);
+  this->cc1101_write_reg_(cc1101::TEST0, 0x09);
   this->cc1101_write_patable_(CC1101_TX_PA_TEST);
+
   ESP_LOGI(TAG, "  IOCFG0   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG0));
   ESP_LOGI(TAG, "  PKTCTRL0 = 0x%02X", this->cc1101_read_reg_(cc1101::PKTCTRL0));
+  ESP_LOGI(TAG, "  FREND0   = 0x%02X", this->cc1101_read_reg_(cc1101::FREND0));
+  ESP_LOGI(TAG, "  MDMCFG2  = 0x%02X", this->cc1101_read_reg_(cc1101::MDMCFG2));
+  ESP_LOGI(TAG, "  PATABLE  = 0x%02X programmed", CC1101_TX_PA_TEST);
+}
+
+bool RFBridgeComponent::cc1101_calibrate_for_tx_() {
+  ESP_LOGI(TAG, "CC1101 TX calibration: SCAL");
+  const uint8_t scal_status = this->cc1101_strobe_(cc1101::SCAL);
+  ESP_LOGI(TAG, "CC1101 TX calibration SCAL status=0x%02X", scal_status);
+
+  bool idle_seen = false;
+  uint8_t marc = 0xFF;
+  for (uint8_t i = 0; i < 40; i++) {
+    delayMicroseconds(250);
+    marc = this->cc1101_read_status_(cc1101::MARCSTATE) & 0x1F;
+    if (marc == 0x01) {
+      idle_seen = true;
+      break;
+    }
+  }
+
+  ESP_LOGI(TAG, "CC1101 TX calibration result idle_seen=%s MARCSTATE=0x%02X FSCAL1=0x%02X FSCAL0=0x%02X",
+           YESNO(idle_seen), marc, this->cc1101_read_reg_(cc1101::FSCAL1), this->cc1101_read_reg_(cc1101::FSCAL0));
+  return idle_seen;
 }
 
 void RFBridgeComponent::tx_write_data_(bool level) {
@@ -1110,6 +1174,16 @@ void RFBridgeComponent::tx_write_data_(bool level) {
 void RFBridgeComponent::tx_log_marcstate_(const char *stage) {
   const uint8_t marc = this->cc1101_read_status_(cc1101::MARCSTATE);
   ESP_LOGI(TAG, "CC1101 TX state %-18s MARCSTATE=0x%02X", stage, marc);
+}
+
+void RFBridgeComponent::tx_dump_status_(const char *stage) {
+  ESP_LOGI(TAG, "CC1101 TX status %-18s MARCSTATE=0x%02X PKTSTATUS=0x%02X TXBYTES=0x%02X FREQEST=0x%02X RSSI=%d dBm",
+           stage,
+           this->cc1101_read_status_(cc1101::MARCSTATE),
+           this->cc1101_read_status_(cc1101::PKTSTATUS),
+           this->cc1101_read_status_(cc1101::TXBYTES),
+           this->cc1101_read_status_(cc1101::FREQEST),
+           this->cc1101_read_rssi_dbm_());
 }
 
 void RFBridgeComponent::tx_send_outprize_frame_(uint32_t prefix, uint32_t low24) {
@@ -1163,7 +1237,12 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
   this->rx_enabled_ = false;
   this->tx_log_marcstate_("before idle");
   this->cc1101_configure_ook_async_tx_();
-  this->tx_log_marcstate_("after tx config");
+  this->tx_dump_status_("after tx config");
+  const bool calibrated = this->cc1101_calibrate_for_tx_();
+  if (!calibrated) {
+    ESP_LOGW(TAG, "CC1101 TX calibration did not report IDLE before STX; continuing for diagnostics");
+  }
+  this->tx_dump_status_("after SCAL");
   ESP_LOGI(TAG, "GDO0 direction: ESP output -> CC1101 async TX data input");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
   this->tx_write_data_(false);
@@ -1171,7 +1250,7 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
   const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
   ESP_LOGI(TAG, "CC1101 TX strobe STX status=0x%02X", stx_status);
   delayMicroseconds(1000);
-  this->tx_log_marcstate_("after STX");
+  this->tx_dump_status_("after STX");
 
   for (uint8_t i = 0; i < repeats; i++) {
     this->tx_send_outprize_frame_(prefix, low24 & 0xFFFFFF);
@@ -1226,7 +1305,12 @@ bool RFBridgeComponent::start_ook_carrier_test_(uint16_t duration_ms) {
   this->rx_enabled_ = false;
   this->tx_log_marcstate_("carrier before idle");
   this->cc1101_configure_ook_async_tx_();
-  this->tx_log_marcstate_("carrier after tx config");
+  this->tx_dump_status_("carrier after tx config");
+  const bool calibrated = this->cc1101_calibrate_for_tx_();
+  if (!calibrated) {
+    ESP_LOGW(TAG, "CC1101 TX calibration did not report IDLE before carrier STX; continuing for diagnostics");
+  }
+  this->tx_dump_status_("carrier after SCAL");
   ESP_LOGI(TAG, "GDO0 direction: ESP output -> CC1101 async TX data input");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
 
@@ -1238,7 +1322,7 @@ bool RFBridgeComponent::start_ook_carrier_test_(uint16_t duration_ms) {
   const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
   ESP_LOGI(TAG, "CC1101 TX carrier STX status=0x%02X", stx_status);
   delayMicroseconds(1000);
-  this->tx_log_marcstate_("carrier after STX");
+  this->tx_dump_status_("carrier after STX");
 
   this->tx_carrier_started_ms_ = millis();
   this->tx_carrier_duration_ms_ = duration_ms;
@@ -1303,15 +1387,22 @@ bool RFBridgeComponent::transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pul
   this->rx_enabled_ = false;
   this->tx_log_marcstate_("before idle");
   this->cc1101_configure_ook_async_tx_();
-  this->tx_log_marcstate_("after tx config");
+  this->tx_dump_status_("after tx config");
+  const bool calibrated = this->cc1101_calibrate_for_tx_();
+  if (!calibrated) {
+    ESP_LOGW(TAG, "CC1101 TX calibration did not report IDLE before STX; continuing for diagnostics");
+  }
+  this->tx_dump_status_("after SCAL");
   ESP_LOGI(TAG, "GDO0 direction: ESP output -> CC1101 async TX data input");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
+
+  ESP_LOGI(TAG, "GDO0 TX data forced LOW before test burst");
   this->tx_write_data_(false);
   delayMicroseconds(2000);
   const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
-  ESP_LOGI(TAG, "CC1101 TX strobe STX status=0x%02X", stx_status);
+  ESP_LOGI(TAG, "CC1101 TX STX status=0x%02X", stx_status);
   delayMicroseconds(1000);
-  this->tx_log_marcstate_("after STX");
+  this->tx_dump_status_("after STX");
 
   for (uint8_t r = 0; r < repeats; r++) {
     for (uint16_t i = 0; i < pulse_count; i++) {
@@ -1369,12 +1460,20 @@ bool RFBridgeComponent::transmit_last_capture_(uint8_t repeats) {
 
   this->rx_enabled_ = false;
   this->cc1101_configure_ook_async_tx_();
+  this->tx_dump_status_("replay after tx config");
+  const bool calibrated = this->cc1101_calibrate_for_tx_();
+  if (!calibrated) {
+    ESP_LOGW(TAG, "CC1101 TX calibration did not report IDLE before replay STX; continuing for diagnostics");
+  }
+  this->tx_dump_status_("replay after SCAL");
   ESP_LOGI(TAG, "GDO0 direction: ESP output -> CC1101 async TX data input");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
   this->tx_write_data_(false);
   delayMicroseconds(2000);
-  this->cc1101_strobe_(cc1101::STX);
+  const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
+  ESP_LOGI(TAG, "CC1101 TX replay STX status=0x%02X", stx_status);
   delayMicroseconds(1000);
+  this->tx_dump_status_("replay after STX");
 
   for (uint8_t r = 0; r < repeats; r++) {
     bool current_level = levels[0] == 0;  // level before first captured edge

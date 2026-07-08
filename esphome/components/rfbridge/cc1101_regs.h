@@ -82,6 +82,7 @@ static constexpr uint8_t VERSION = 0x31;
 static constexpr uint8_t RSSI = 0x34;
 static constexpr uint8_t MARCSTATE = 0x35;
 static constexpr uint8_t PKTSTATUS = 0x38;
+static constexpr uint8_t FREQEST = 0x32;
 static constexpr uint8_t TXBYTES = 0x3A;
 static constexpr uint8_t RXBYTES = 0x3B;
 
@@ -91,9 +92,10 @@ static constexpr uint8_t READ_BURST = 0xC0;
 static constexpr uint8_t WRITE_BURST = 0x40;
 
 // Values observed from the known-good ESPHome RF Gateway/sniffer register readback.
-static constexpr uint8_t GDO_SERIAL_DATA = 0x0D;   // async serial data output
+static constexpr uint8_t GDO_SERIAL_DATA = 0x0D;   // async serial data input/output for async serial mode
 static constexpr uint8_t GDO_IOCFG2_KNOWN_GOOD = 0x29;
 static constexpr uint8_t PKTCTRL0_KNOWN_GOOD = 0x30;  // known-good working sniffer value
+static constexpr uint8_t PKTCTRL0_ASYNC_INFINITE = 0x32;  // async serial mode + infinite length baseline for TX diagnostics
 
 }  // namespace cc1101
 }  // namespace rfbridge

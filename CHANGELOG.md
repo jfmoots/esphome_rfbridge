@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.5 - Full CC1101 TX Profile
+
+- Updates firmware version to 1.3.5.
+- Replaces the minimal TX setup with an explicit full CC1101 async OOK TX register profile.
+- Changes the TX diagnostic PA table value from 0x84 to 0xC0.
+- Uses async serial + infinite packet baseline (`PKTCTRL0 = 0x32`) for TX diagnostics.
+- Adds explicit `SCAL` calibration before `STX` on Outprize TX, carrier test, hardware burst test, and replay.
+- Adds TX status dumps around TX configuration, calibration, and STX (`MARCSTATE`, `PKTSTATUS`, `TXBYTES`, `FREQEST`, RSSI).
+- Keeps the verified RX decoder and RX restore path intact.
+
 ## v1.3.4 - Drive GDO0 During TX
 
 - Updates firmware version to 1.3.4.
