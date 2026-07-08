@@ -2,9 +2,9 @@
 
 ESPHome external component for a CC1101-based RF bridge used in the MooterHome Outprize vent fan reverse-engineering project.
 
-## v0.10.2 focus
+## v1.0.0 focus
 
-This release makes the normal receive path protocol-oriented and quiet. The bridge now decodes first, logs compact protocol events, and only runs the expensive raw analyzer when `diagnostic_logging: true`. This leaves room for additional candidate decoders, such as TyreGuard, without slowing the normal Outprize path.
+This release promotes the Outprize receive decoder to the first verified baseline. The protocol fields have been checked against live remote captures, including speed table entries, direction, rain, vent commands, POWER, and FAN behavior. The normal receive path remains protocol-oriented and quiet: it decodes first, logs compact protocol events, and only runs the expensive raw analyzer when `diagnostic_logging: true`.
 
 RVLock is intentionally out of scope for RF rolling-code decoding in this project; that control path will use a cannibalized physical remote/button-push approach instead.
 

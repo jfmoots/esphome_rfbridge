@@ -1,4 +1,6 @@
-# Outprize RF Protocol Notes
+# Outprize RF Protocol
+
+Status: verified live-capture baseline as of v1.0.0. Notes
 
 This document is the source-of-truth protocol model for the MooterHome Outprize vent fan remote.
 

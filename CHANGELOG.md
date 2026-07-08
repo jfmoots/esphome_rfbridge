@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.0.0 – Verified Outprize Protocol Decoder
+
+- Promotes the Outprize decoder from cleanup/beta status to verified baseline.
+- Keeps the verified protocol model unchanged from v0.10.2.
+- Confirms compact normal logging remains the default receive path.
+- Documents verified live-capture behavior for:
+  - Gray-coded speed table / `0x60xxxx` packet family.
+  - Direction modifier `+0x20`.
+  - Rain modifier `+0x10`.
+  - Vent close/open/stop nibbles `+0x04`, `+0x08`, `+0x0C`.
+  - POWER OFF as `0x600000`.
+  - POWER ON / wake / fan-off-awake as `0x600040`.
+  - FAN button as fan-only toggle: remembered fan state when off, `0x600040` when on.
+- Retains protocol-dispatcher structure for future candidate decoders such as TyreGuard.
+- Leaves RVLock rolling-code decoding out of scope; RVLock control will use a physical remote/button-push path.
+
 ## v0.10.2 – Protocol Dispatcher Cleanup
 
 - Keeps the verified Outprize protocol model unchanged.
