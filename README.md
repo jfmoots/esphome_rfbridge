@@ -1,61 +1,23 @@
 # ESPHome RF Bridge
 
-ESPHome external component for a CC1101-based RF bridge used in the MooterHome Outprize vent fan reverse-engineering project.
+## v1.1.2 – Lambda TX Test Interface
 
-## v1.1.1 focus
+This release keeps the verified Outprize decoder baseline and adds a practical transmit test interface that ESPHome can compile today.
 
-This release fixes the ESPHome automation interface for the first Outprize transmitter. v1.1.0 added the C++ transmit helpers, but the YAML action `rfbridge.send_outprize_low24` was not registered with ESPHome. v1.1.1 registers the transmit actions so template buttons can call TX directly from YAML.
-
-The verified v1.0.0 receive decoder and verified Outprize protocol model are unchanged. RVLock remains intentionally out of scope for RF rolling-code decoding; that control path will use a cannibalized physical remote/button-push approach instead.
-
-## ESPHome example
+The v1.1.1 custom actions were the right idea, but ESPHome did not recognize them from YAML in the current external-component layout. v1.1.2 uses direct ESPHome lambdas against the component ID instead:
 
 ```yaml
-external_components:
-  - source: github://jfmoots/esphome_rfbridge
-    components: [rfbridge]
-
-rfbridge:
-  cs_pin: GPIO5
-  sck_pin: GPIO18
-  mosi_pin: GPIO23
-  miso_pin: GPIO19
-  gdo0_pin: GPIO4
-  diagnostic_logging: false
+- lambda: |-
+    id(rf_bridge).send_outprize_low24(0x6CF, 0x600140, 3);
 ```
 
-## Normal logging
+That lets us test the transmitter without waiting on the custom action registration path.
 
-With diagnostics off, successful Outprize captures are reduced to a compact event:
+## Test YAML
 
-```text
-OUTPRIZE low24=0x600340 confidence=excellent score=1155 candidates=12 edges=72 rssi=-49 dBm
-```
+Use `esphome/examples/rfbridge_outprize_transmit_test.yaml` as the reference.
 
-Unknown captures are ignored at debug level unless diagnostics are enabled.
-
-## Verified Outprize fields
-
-- Fixed packet family: `0x60xxxx`
-- Direction modifier: `+0x20`
-- Rain modifier: `+0x10`
-- Vent close/open/stop nibble: `+0x04`, `+0x08`, `+0x0C`
-- POWER OFF: `0x600000`
-- POWER ON / wake / fan-off awake: `0x600040`
-- FAN button toggles fan-only: when off it sends remembered speed state; when on it sends `0x600040`.
-
-
-## v1.1.1 Transmit Testing
-
-Default Outprize prefix / remote ID: `0x6CF`
-
-The component now exposes ESPHome automation actions:
-
-- `rfbridge.send_outprize_low24`
-- `rfbridge.send_outprize_fan_off`
-- `rfbridge.send_outprize_power_off`
-
-Because ESPHome actions need to know which component instance to call, give the `rfbridge` an `id` and include that same id in each action.
+Minimum important pieces:
 
 ```yaml
 rfbridge:
@@ -69,31 +31,42 @@ rfbridge:
 
 button:
   - platform: template
-    name: Outprize TX Test 40 Percent OUT
+    name: "Outprize TX Test 40 Percent OUT"
     on_press:
-      - rfbridge.send_outprize_low24:
-          id: rf_bridge
-          low24: 0x600140
-
-  - platform: template
-    name: Outprize TX Test Fan Off Awake
-    on_press:
-      - rfbridge.send_outprize_fan_off:
-          id: rf_bridge
-
-  - platform: template
-    name: Outprize TX Test Power Off
-    on_press:
-      - rfbridge.send_outprize_power_off:
-          id: rf_bridge
-
-  - platform: template
-    name: Outprize TX Test 60 Percent OUT
-    on_press:
-      - rfbridge.send_outprize_low24:
-          id: rf_bridge
-          low24: 0x600340
-          repeats: 3
+      - lambda: |-
+          id(rf_bridge).send_outprize_low24(0x6CF, 0x600140, 3);
 ```
 
-Recommended first test: use FAN OFF / awake idle (`0x600040`) while watching the RF log, then test a remembered fan-state command such as 40% OUT (`0x600140`) or 60% OUT (`0x600340`).
+## Optional raw transmit service
+
+The example also exposes a generic Home Assistant-callable API service:
+
+```yaml
+api:
+  services:
+    - service: outprize_send_low24
+      variables:
+        low24: int
+        remote_id: int
+        repeats: int
+      then:
+        - lambda: |-
+            id(rf_bridge).send_outprize_low24((uint32_t) remote_id, (uint32_t) low24, (uint8_t) repeats);
+```
+
+This is closer to the eventual architecture: the Home Assistant Outprize integration computes the Low24 packet and the bridge transmits it.
+
+## Verified Outprize Low24 examples
+
+- `0x600000` – POWER OFF: display off, fan stops, vent closes
+- `0x600040` – awake idle / fan off, vent unchanged
+- `0x600140` – 40% OUT
+- `0x600340` – 60% OUT
+- `0x600170` – 40% IN + Rain
+- `0x600178` – 40% IN + Rain + Vent OPEN
+- `0x60017C` – 40% IN + Rain + Vent STOP
+- `0x600154` – 40% OUT + Rain + Vent CLOSE
+
+## Current goal
+
+This release is not yet the final Outprize control integration. It is for one thing: proving that the ESP32 + CC1101 can transmit a verified Outprize packet and make the fan respond.

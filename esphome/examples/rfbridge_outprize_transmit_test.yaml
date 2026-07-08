@@ -8,13 +8,26 @@ esp32:
     type: arduino
 
 logger:
+
 api:
+  services:
+    - service: outprize_send_low24
+      variables:
+        low24: int
+        remote_id: int
+        repeats: int
+      then:
+        - lambda: |-
+            id(rf_bridge).send_outprize_low24((uint32_t) remote_id, (uint32_t) low24, (uint8_t) repeats);
+
 ota:
   - platform: esphome
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+
+web_server:
 
 external_components:
   - source: github://jfmoots/esphome_rfbridge
@@ -31,28 +44,25 @@ rfbridge:
 
 button:
   - platform: template
-    name: Outprize TX Test 40 Percent OUT
+    name: "Outprize TX Test 40 Percent OUT"
     on_press:
-      - rfbridge.send_outprize_low24:
-          id: rf_bridge
-          low24: 0x600140
+      - lambda: |-
+          id(rf_bridge).send_outprize_low24(0x6CF, 0x600140, 3);
 
   - platform: template
-    name: Outprize TX Test Fan Off Awake
+    name: "Outprize TX Test Fan Off Awake"
     on_press:
-      - rfbridge.send_outprize_fan_off:
-          id: rf_bridge
+      - lambda: |-
+          id(rf_bridge).send_outprize_low24(0x6CF, 0x600040, 3);
 
   - platform: template
-    name: Outprize TX Test Power Off
+    name: "Outprize TX Test Power Off"
     on_press:
-      - rfbridge.send_outprize_power_off:
-          id: rf_bridge
+      - lambda: |-
+          id(rf_bridge).send_outprize_low24(0x6CF, 0x600000, 3);
 
   - platform: template
-    name: Outprize TX Test 60 Percent OUT
+    name: "Outprize TX Test 60 Percent OUT"
     on_press:
-      - rfbridge.send_outprize_low24:
-          id: rf_bridge
-          low24: 0x600340
-          repeats: 3
+      - lambda: |-
+          id(rf_bridge).send_outprize_low24(0x6CF, 0x600340, 3);
