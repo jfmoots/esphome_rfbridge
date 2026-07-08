@@ -80,6 +80,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window verified Outprize decoder");
   ESP_LOGCONFIG(TAG, "  TX Mode: Experimental Outprize async OOK transmitter");
   ESP_LOGCONFIG(TAG, "  Diagnostic Logging: %s", YESNO(this->diagnostic_logging_));
+  ESP_LOGCONFIG(TAG, "  Outprize Remote ID: 0x%03X", this->outprize_remote_id_ & 0x7FF);
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
   ESP_LOGCONFIG(TAG, "  RX Capture Window: %u us", RX_CAPTURE_WINDOW_US);
   ESP_LOGCONFIG(TAG, "  RX Packets Seen: %u", this->rx_packets_seen_);
@@ -1035,6 +1036,11 @@ uint32_t RFBridgeComponent::encode_outprize_low24(uint8_t speed_percent, Outpriz
   return low24 & 0xFFFFFF;
 }
 
+bool RFBridgeComponent::send_outprize(uint8_t speed_percent, OutprizeDirection direction, bool rain_enabled,
+                                      OutprizeVentCommand vent_command) {
+  return this->send_outprize(this->outprize_remote_id_, speed_percent, direction, rain_enabled, vent_command);
+}
+
 bool RFBridgeComponent::send_outprize(uint32_t remote_id, uint8_t speed_percent, OutprizeDirection direction,
                                       bool rain_enabled, OutprizeVentCommand vent_command) {
   const uint32_t low24 = this->encode_outprize_low24(speed_percent, direction, rain_enabled, vent_command);
@@ -1042,6 +1048,10 @@ bool RFBridgeComponent::send_outprize(uint32_t remote_id, uint8_t speed_percent,
            remote_id & 0x7FF, speed_percent, direction == OutprizeDirection::IN ? "IN" : "OUT",
            YESNO(rain_enabled), static_cast<uint8_t>(vent_command), low24 & 0xFFFFFF);
   return this->send_outprize_low24(remote_id, low24, 3);
+}
+
+bool RFBridgeComponent::send_outprize_low24(uint32_t low24, uint8_t repeats) {
+  return this->send_outprize_low24(this->outprize_remote_id_, low24, repeats);
 }
 
 bool RFBridgeComponent::send_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats) {

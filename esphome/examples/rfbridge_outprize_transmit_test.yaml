@@ -41,28 +41,29 @@ rfbridge:
   miso_pin: GPIO19
   gdo0_pin: GPIO4
   diagnostic_logging: false
+  remote_id: 0x6CF
 
 button:
   - platform: template
     name: "Outprize TX Test 40 Percent OUT"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x6CF, 0x600140, 3);
+          id(rf_bridge).send_outprize_low24(0x600140);
 
   - platform: template
     name: "Outprize TX Test Fan Off Awake"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x6CF, 0x600040, 3);
+          id(rf_bridge).send_outprize_low24(0x600040);
 
   - platform: template
     name: "Outprize TX Test Power Off"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x6CF, 0x600000, 3);
+          id(rf_bridge).send_outprize_low24(0x600000);
 
   - platform: template
     name: "Outprize TX Test 60 Percent OUT"
     on_press:
       - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x6CF, 0x600340, 3);
+          id(rf_bridge).send_outprize_low24(0x600340);

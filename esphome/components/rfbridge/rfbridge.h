@@ -35,15 +35,19 @@ class RFBridgeComponent : public Component {
   void set_gdo0_pin(GPIOPin *pin) { this->gdo0_pin_ = pin; }
   void set_gdo2_pin(GPIOPin *pin) { this->gdo2_pin_ = pin; }
   void set_diagnostic_logging(bool diagnostic_logging) { this->diagnostic_logging_ = diagnostic_logging; }
+  void set_outprize_remote_id(uint32_t remote_id) { this->outprize_remote_id_ = remote_id & 0x7FF; }
 
   uint32_t encode_outprize_low24(uint8_t speed_percent, OutprizeDirection direction, bool rain_enabled,
                                  OutprizeVentCommand vent_command) const;
 
+  bool send_outprize(uint8_t speed_percent, OutprizeDirection direction, bool rain_enabled,
+                     OutprizeVentCommand vent_command);
   bool send_outprize(uint32_t remote_id, uint8_t speed_percent, OutprizeDirection direction, bool rain_enabled,
                      OutprizeVentCommand vent_command);
-  bool send_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats = 3);
-  bool send_outprize_power_off(uint32_t remote_id) { return this->send_outprize_low24(remote_id, 0x600000, 3); }
-  bool send_outprize_fan_off(uint32_t remote_id) { return this->send_outprize_low24(remote_id, 0x600040, 3); }
+  bool send_outprize_low24(uint32_t low24, uint8_t repeats = 3);
+  bool send_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats);
+  bool send_outprize_power_off(uint8_t repeats = 3) { return this->send_outprize_low24(0x600000, repeats); }
+  bool send_outprize_fan_off(uint8_t repeats = 3) { return this->send_outprize_low24(0x600040, repeats); }
 
  protected:
   GPIOPin *cs_pin_{nullptr};
@@ -129,6 +133,7 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t OUTPRIZE_SYNC_US_MAX = 5200;
 
   bool diagnostic_logging_{false};
+  uint32_t outprize_remote_id_{OUTPRIZE_DEFAULT_PREFIX};
   bool rx_last_outprize_like_{false};
   bool rx_enabled_{false};
   bool rx_have_level_{false};

@@ -30,6 +30,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_GDO0_PIN): pins.gpio_input_pin_schema,
         cv.Optional(CONF_GDO2_PIN): pins.gpio_input_pin_schema,
         cv.Optional(CONF_DIAGNOSTIC_LOGGING, default=False): cv.boolean,
+        cv.Optional(CONF_REMOTE_ID, default=0x6CF): cv.hex_uint32_t,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -50,6 +51,7 @@ async def to_code(config):
         cg.add(var.set_gdo2_pin(await cg.gpio_pin_expression(config[CONF_GDO2_PIN])))
 
     cg.add(var.set_diagnostic_logging(config[CONF_DIAGNOSTIC_LOGGING]))
+    cg.add(var.set_outprize_remote_id(config[CONF_REMOTE_ID]))
 
 
 OUTPRIZE_ACTION_BASE_SCHEMA = cv.Schema(

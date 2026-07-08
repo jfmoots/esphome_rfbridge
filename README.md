@@ -1,10 +1,10 @@
 # ESPHome RF Bridge
 
-## v1.1.2 – Lambda TX Test Interface
+## v1.1.3 – Lambda TX Test Interface
 
 This release keeps the verified Outprize decoder baseline and adds a practical transmit test interface that ESPHome can compile today.
 
-The v1.1.1 custom actions were the right idea, but ESPHome did not recognize them from YAML in the current external-component layout. v1.1.2 uses direct ESPHome lambdas against the component ID instead:
+The v1.1.1 custom actions were the right idea, but ESPHome did not recognize them from YAML in the current external-component layout. v1.1.3 uses direct ESPHome lambdas against the component ID instead:
 
 ```yaml
 - lambda: |-

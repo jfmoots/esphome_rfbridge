@@ -1,12 +1,23 @@
+# v1.1.3 – Configured Remote ID TX API
+
+Fixes the lambda TX test interface by moving the Outprize remote ID into rfbridge configuration and adding a one-argument transmit helper.
+
+Changes:
+• Adds `remote_id:` to the `rfbridge:` configuration.
+• Adds `send_outprize_low24(low24, repeats=3)` using the configured remote ID.
+• Keeps the existing explicit `send_outprize_low24(remote_id, low24, repeats)` overload for advanced/manual tests.
+• Updates TX test YAML to call `id(rf_bridge).send_outprize_low24(0x600140);`.
+• Updates firmware version to 1.1.3.
+
 # Changelog
 
-## v1.1.2 – Lambda TX Test Interface
+## v1.1.3 – Lambda TX Test Interface
 
 Fixes first-transmit testing by avoiding the custom-action registration path that ESPHome was not recognizing in v1.1.1.
 
 ### Changed
 
-- Updates firmware version to `1.1.2`.
+- Updates firmware version to `1.1.3`.
 - Keeps the verified v1.0.0 Outprize receive decoder unchanged.
 - Keeps the v1.1.x C++ transmit helpers unchanged.
 - Changes transmit test YAML to call `id(rf_bridge).send_outprize_low24(...)` from ESPHome lambdas.
