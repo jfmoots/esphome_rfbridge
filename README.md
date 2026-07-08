@@ -1,3 +1,7 @@
+# ESPHome RF Bridge v1.2.1
+
+Build metadata compile-fix release for OEM waveform replay testing.
+
 # ESPHome RF Bridge
 
 ## v1.1.4 – Outprize Remote ID Logger
@@ -54,13 +58,13 @@ button:
 ```
 
 
-## v1.2.0 OEM waveform replay test
+## v1.2.1 OEM waveform replay test
 
 This release adds a raw replay smoke test for the transmit path. Use it before relying on generated Outprize packets.
 
 Test flow:
 
-1. Flash v1.2.0.
+1. Flash v1.2.1.
 2. Press one OEM Outprize remote button and confirm the bridge logs an `OUTPRIZE` decode.
 3. Press the ESPHome button `RF Replay Last Capture`.
 4. Watch whether the fan repeats the same behavior.
