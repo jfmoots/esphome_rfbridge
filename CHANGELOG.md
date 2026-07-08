@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.1.1 – ESPHome TX Actions
+
+Fixes the YAML automation interface for the first Outprize transmitter.
+
+### Added
+- Registers `rfbridge.send_outprize_low24` as an ESPHome automation action.
+- Registers `rfbridge.send_outprize_fan_off` and `rfbridge.send_outprize_power_off` convenience actions.
+- Adds action examples using `id: rf_bridge` so template buttons can trigger TX without C++ lambdas.
+
+### Notes
+- The verified Outprize protocol model is unchanged.
+- The v1.1.0 C++ transmit helpers remain available for lambda-based testing.
+- This release exists because v1.1.0 added TX helpers but did not expose the custom YAML action used by the test buttons.
+
 ## v1.1.0 – First Outprize Transmitter
 
 Adds the first experimental Outprize RF transmit path.

@@ -4,6 +4,8 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
+#include "esphome/core/automation.h"
+#include "esphome/core/helpers.h"
 
 namespace esphome {
 namespace rfbridge {
@@ -168,6 +170,45 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t OUTPRIZE_TX_INTER_FRAME_GAP_US = 9000;
   static constexpr uint16_t OUTPRIZE_TX_BITS = 35;
   static constexpr uint32_t OUTPRIZE_DEFAULT_PREFIX = 0x6CF;
+};
+
+
+template<typename... Ts> class SendOutprizeLow24Action : public Action<Ts...>, public Parented<RFBridgeComponent> {
+ public:
+  TEMPLATABLE_VALUE(uint32_t, remote_id)
+  TEMPLATABLE_VALUE(uint32_t, low24)
+  TEMPLATABLE_VALUE(uint8_t, repeats)
+
+  void play(Ts... x) override {
+    const uint32_t remote_id = this->remote_id_.value(x...);
+    const uint32_t low24 = this->low24_.value(x...);
+    const uint8_t repeats = this->repeats_.value(x...);
+    this->parent_->send_outprize_low24(remote_id, low24, repeats);
+  }
+};
+
+template<typename... Ts> class SendOutprizePowerOffAction : public Action<Ts...>, public Parented<RFBridgeComponent> {
+ public:
+  TEMPLATABLE_VALUE(uint32_t, remote_id)
+  TEMPLATABLE_VALUE(uint8_t, repeats)
+
+  void play(Ts... x) override {
+    const uint32_t remote_id = this->remote_id_.value(x...);
+    const uint8_t repeats = this->repeats_.value(x...);
+    this->parent_->send_outprize_low24(remote_id, 0x600000, repeats);
+  }
+};
+
+template<typename... Ts> class SendOutprizeFanOffAction : public Action<Ts...>, public Parented<RFBridgeComponent> {
+ public:
+  TEMPLATABLE_VALUE(uint32_t, remote_id)
+  TEMPLATABLE_VALUE(uint8_t, repeats)
+
+  void play(Ts... x) override {
+    const uint32_t remote_id = this->remote_id_.value(x...);
+    const uint8_t repeats = this->repeats_.value(x...);
+    this->parent_->send_outprize_low24(remote_id, 0x600040, repeats);
+  }
 };
 
 }  // namespace rfbridge

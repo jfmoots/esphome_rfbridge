@@ -31,37 +31,28 @@ rfbridge:
 
 button:
   - platform: template
-    name: Outprize Fan Off Awake
+    name: Outprize TX Test 40 Percent OUT
     on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize_fan_off(0x6CF);
+      - rfbridge.send_outprize_low24:
+          id: rf_bridge
+          low24: 0x600140
 
   - platform: template
-    name: Outprize Fan 60 OUT
+    name: Outprize TX Test Fan Off Awake
     on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize(
-            0x6CF,
-            60,
-            esphome::rfbridge::OutprizeDirection::OUT,
-            false,
-            esphome::rfbridge::OutprizeVentCommand::NONE
-          );
+      - rfbridge.send_outprize_fan_off:
+          id: rf_bridge
 
   - platform: template
-    name: Outprize Vent Open 60 OUT
+    name: Outprize TX Test Power Off
     on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize(
-            0x6CF,
-            60,
-            esphome::rfbridge::OutprizeDirection::OUT,
-            false,
-            esphome::rfbridge::OutprizeVentCommand::OPEN
-          );
+      - rfbridge.send_outprize_power_off:
+          id: rf_bridge
 
   - platform: template
-    name: Outprize Power Off
+    name: Outprize TX Test 60 Percent OUT
     on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize_power_off(0x6CF);
+      - rfbridge.send_outprize_low24:
+          id: rf_bridge
+          low24: 0x600340
+          repeats: 3

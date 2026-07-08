@@ -43,3 +43,26 @@ Rain ON:           +0x10
 ## Caution
 
 This is the first TX build. Use with direct observation of the fan/vent and keep the OEM remote nearby.
+
+## ESPHome automation actions (v1.1.1)
+
+v1.1.1 registers the YAML actions that were missing in v1.1.0:
+
+```yaml
+- rfbridge.send_outprize_low24:
+    id: rf_bridge
+    low24: 0x600340
+    repeats: 3
+```
+
+Convenience actions:
+
+```yaml
+- rfbridge.send_outprize_fan_off:
+    id: rf_bridge
+
+- rfbridge.send_outprize_power_off:
+    id: rf_bridge
+```
+
+All actions accept optional `remote_id` and `repeats`. Default `remote_id` is `0x6CF`; default `repeats` is `3`.

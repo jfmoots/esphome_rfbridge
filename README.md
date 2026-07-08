@@ -2,11 +2,11 @@
 
 ESPHome external component for a CC1101-based RF bridge used in the MooterHome Outprize vent fan reverse-engineering project.
 
-## v1.0.0 focus
+## v1.1.1 focus
 
-This release promotes the Outprize receive decoder to the first verified baseline. The protocol fields have been checked against live remote captures, including speed table entries, direction, rain, vent commands, POWER, and FAN behavior. The normal receive path remains protocol-oriented and quiet: it decodes first, logs compact protocol events, and only runs the expensive raw analyzer when `diagnostic_logging: true`.
+This release fixes the ESPHome automation interface for the first Outprize transmitter. v1.1.0 added the C++ transmit helpers, but the YAML action `rfbridge.send_outprize_low24` was not registered with ESPHome. v1.1.1 registers the transmit actions so template buttons can call TX directly from YAML.
 
-RVLock is intentionally out of scope for RF rolling-code decoding in this project; that control path will use a cannibalized physical remote/button-push approach instead.
+The verified v1.0.0 receive decoder and verified Outprize protocol model are unchanged. RVLock remains intentionally out of scope for RF rolling-code decoding; that control path will use a cannibalized physical remote/button-push approach instead.
 
 ## ESPHome example
 
@@ -45,13 +45,17 @@ Unknown captures are ignored at debug level unless diagnostics are enabled.
 - FAN button toggles fan-only: when off it sends remembered speed state; when on it sends `0x600040`.
 
 
-## v1.1.0 Transmit Testing
+## v1.1.1 Transmit Testing
 
-This release adds the first experimental Outprize transmitter. The verified decoder remains the baseline; TX is intentionally simple and logs each send.
+Default Outprize prefix / remote ID: `0x6CF`
 
-Default Outprize prefix: `0x6CF`
+The component now exposes ESPHome automation actions:
 
-Example ESPHome template buttons:
+- `rfbridge.send_outprize_low24`
+- `rfbridge.send_outprize_fan_off`
+- `rfbridge.send_outprize_power_off`
+
+Because ESPHome actions need to know which component instance to call, give the `rfbridge` an `id` and include that same id in each action.
 
 ```yaml
 rfbridge:
@@ -65,40 +69,31 @@ rfbridge:
 
 button:
   - platform: template
-    name: Outprize Fan 60 OUT
+    name: Outprize TX Test 40 Percent OUT
     on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize(
-            0x6CF,
-            60,
-            esphome::rfbridge::OutprizeDirection::OUT,
-            false,
-            esphome::rfbridge::OutprizeVentCommand::NONE
-          );
+      - rfbridge.send_outprize_low24:
+          id: rf_bridge
+          low24: 0x600140
 
   - platform: template
-    name: Outprize Fan Off Awake
+    name: Outprize TX Test Fan Off Awake
     on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize_fan_off(0x6CF);
+      - rfbridge.send_outprize_fan_off:
+          id: rf_bridge
 
   - platform: template
-    name: Outprize Power Off
+    name: Outprize TX Test Power Off
     on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize_power_off(0x6CF);
+      - rfbridge.send_outprize_power_off:
+          id: rf_bridge
 
   - platform: template
-    name: Outprize Vent Open
+    name: Outprize TX Test 60 Percent OUT
     on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize(
-            0x6CF,
-            60,
-            esphome::rfbridge::OutprizeDirection::OUT,
-            false,
-            esphome::rfbridge::OutprizeVentCommand::OPEN
-          );
+      - rfbridge.send_outprize_low24:
+          id: rf_bridge
+          low24: 0x600340
+          repeats: 3
 ```
 
-Recommended first test: use a harmless command such as FAN OFF / awake idle (`0x600040`) while watching the RF log, then test a remembered fan-state command such as 60% OUT (`0x600340`).
+Recommended first test: use FAN OFF / awake idle (`0x600040`) while watching the RF log, then test a remembered fan-state command such as 40% OUT (`0x600140`) or 60% OUT (`0x600340`).
