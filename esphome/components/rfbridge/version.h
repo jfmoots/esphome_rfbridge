@@ -1,10 +1,3 @@
 #pragma once
 
-#define RFBRIDGE_VERSION "1.1.4"
-
-#ifndef RFBRIDGE_GIT_REF
-#define RFBRIDGE_GIT_REF "unknown"
-#endif
-
-#define RFBRIDGE_BUILD_DATE __DATE__
-#define RFBRIDGE_BUILD_TIME __TIME__
+#define RFBRIDGE_VERSION "1.2.0"

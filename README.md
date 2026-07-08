@@ -52,3 +52,28 @@ button:
       - lambda: |-
           id(rf_bridge).send_outprize_low24(0x600000);
 ```
+
+
+## v1.2.0 OEM waveform replay test
+
+This release adds a raw replay smoke test for the transmit path. Use it before relying on generated Outprize packets.
+
+Test flow:
+
+1. Flash v1.2.0.
+2. Press one OEM Outprize remote button and confirm the bridge logs an `OUTPRIZE` decode.
+3. Press the ESPHome button `RF Replay Last Capture`.
+4. Watch whether the fan repeats the same behavior.
+
+The replay method uses the last captured pulse train rather than synthesizing bits from `remote_id + low24`. This helps separate CC1101 transmit/modulation issues from packet-generation issues.
+
+Example button:
+
+```yaml
+button:
+  - platform: template
+    name: "RF Replay Last Capture"
+    on_press:
+      - lambda: |-
+          id(rf_bridge).replay_last_capture(1);
+```

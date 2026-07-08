@@ -1174,5 +1174,67 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
   return true;
 }
 
+bool RFBridgeComponent::replay_last_capture(uint8_t repeats) {
+  return this->transmit_last_capture_(repeats);
+}
+
+bool RFBridgeComponent::transmit_last_capture_(uint8_t repeats) {
+  if (!this->cc1101_configured_ || this->gdo0_pin_ == nullptr) {
+    ESP_LOGE(TAG, "RF replay unavailable; CC1101 configured=%s gdo0=%s", YESNO(this->cc1101_configured_),
+             this->gdo0_pin_ == nullptr ? "missing" : "present");
+    return false;
+  }
+  if (this->rx_edge_count_ < RX_MIN_EDGES) {
+    ESP_LOGW(TAG, "RF replay unavailable; no usable capture stored (edges=%u)", this->rx_edge_count_);
+    return false;
+  }
+  if (repeats == 0) repeats = 1;
+  if (repeats > 8) repeats = 8;
+
+  const uint16_t edge_count = this->rx_edge_count_;
+  uint16_t edges[RX_MAX_EDGES];
+  uint8_t levels[RX_MAX_EDGES];
+  for (uint16_t i = 0; i < edge_count; i++) {
+    edges[i] = this->rx_edges_[i];
+    levels[i] = this->rx_levels_[i];
+  }
+
+  ESP_LOGI(TAG, "RF replay last capture start edges=%u repeats=%u", edge_count, repeats);
+
+  this->rx_enabled_ = false;
+  this->cc1101_configure_ook_async_tx_();
+  this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
+  this->tx_write_data_(false);
+  delayMicroseconds(2000);
+  this->cc1101_strobe_(cc1101::STX);
+  delayMicroseconds(1000);
+
+  for (uint8_t r = 0; r < repeats; r++) {
+    bool current_level = levels[0] == 0;  // level before first captured edge
+    this->tx_write_data_(current_level);
+    for (uint16_t i = 0; i < edge_count; i++) {
+      delayMicroseconds(edges[i]);
+      current_level = levels[i] != 0;
+      this->tx_write_data_(current_level);
+    }
+    this->tx_write_data_(false);
+    delayMicroseconds(OUTPRIZE_TX_INTER_FRAME_GAP_US);
+  }
+
+  this->tx_write_data_(false);
+  delayMicroseconds(1000);
+  this->cc1101_enter_idle_();
+
+  this->gdo0_pin_->pin_mode(gpio::FLAG_INPUT);
+  this->cc1101_configure_ook_async_rx_();
+  this->cc1101_enter_rx_();
+  this->rx_reset_packet_(micros(), this->gdo0_pin_->digital_read());
+  this->rx_last_capture_ms_ = millis();
+  this->rx_enabled_ = true;
+
+  ESP_LOGI(TAG, "RF replay last capture complete edges=%u", edge_count);
+  return true;
+}
+
 }  // namespace rfbridge
 }  // namespace esphome

@@ -67,3 +67,10 @@ button:
     on_press:
       - lambda: |-
           id(rf_bridge).send_outprize_low24(0x600340);
+
+
+  - platform: template
+    name: "RF Replay Last Capture"
+    on_press:
+      - lambda: |-
+          id(rf_bridge).replay_last_capture(1);
