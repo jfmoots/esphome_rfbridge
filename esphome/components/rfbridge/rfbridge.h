@@ -99,6 +99,8 @@ class RFBridgeComponent : public Component {
     uint16_t invalid_count{0};
     uint16_t score{0};
     uint32_t low24{0};
+    uint64_t full_packet{0};
+    uint16_t remote_id{0};
   };
 
   bool rx_outprize_decode_from_index_(uint16_t start_index, OutprizeDecodeCandidate *candidate) const;

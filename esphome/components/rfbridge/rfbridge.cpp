@@ -80,7 +80,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window verified Outprize decoder");
   ESP_LOGCONFIG(TAG, "  TX Mode: Experimental Outprize async OOK transmitter");
   ESP_LOGCONFIG(TAG, "  Diagnostic Logging: %s", YESNO(this->diagnostic_logging_));
-  ESP_LOGCONFIG(TAG, "  Outprize Remote ID: 0x%03X", this->outprize_remote_id_ & 0x7FF);
+  ESP_LOGCONFIG(TAG, "  Outprize Remote ID / 11-bit prefix: 0x%03X", this->outprize_remote_id_ & 0x7FF);
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
   ESP_LOGCONFIG(TAG, "  RX Capture Window: %u us", RX_CAPTURE_WINDOW_US);
   ESP_LOGCONFIG(TAG, "  RX Packets Seen: %u", this->rx_packets_seen_);
@@ -823,6 +823,20 @@ bool RFBridgeComponent::rx_outprize_decode_from_index_(uint16_t start_index, Out
     low24 = (low24 << 1) | (candidate->bits[i] ? 1UL : 0UL);
   }
   candidate->low24 = low24 & 0xFFFFFF;
+
+  uint64_t full_packet = 0;
+  for (uint16_t i = 0; i < candidate->bit_count && i < 35; i++) {
+    full_packet = (full_packet << 1) | (candidate->bits[i] ? 1ULL : 0ULL);
+  }
+  candidate->full_packet = full_packet;
+
+  // The verified Outprize frame is 35 bits: 11-bit remote prefix + 24-bit command.
+  // Shorter clipped decodes can still produce a valid Low24, but only a full 35-bit
+  // decode should be trusted for learning/transmit identity.
+  if (candidate->bit_count >= 35) {
+    candidate->remote_id = static_cast<uint16_t>((full_packet >> 24) & 0x7FF);
+  }
+
   candidate->score = this->rx_score_outprize_candidate_(candidate);
   candidate->valid = true;
   return true;
@@ -965,8 +979,15 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
   }
 
   if (!this->diagnostic_logging_) {
-    ESP_LOGI(TAG, "OUTPRIZE low24=0x%06X confidence=%s score=%u candidates=%u edges=%u rssi=%d dBm",
-             best.low24, confidence, best.score, valid_candidates, this->rx_edge_count_, this->rx_last_trigger_rssi_dbm_);
+    if (best.bit_count >= 35) {
+      ESP_LOGI(TAG, "OUTPRIZE remote=0x%03X full35=0x%09llX low24=0x%06X confidence=%s score=%u candidates=%u edges=%u rssi=%d dBm",
+               best.remote_id, static_cast<unsigned long long>(best.full_packet), best.low24, confidence, best.score, valid_candidates,
+               this->rx_edge_count_, this->rx_last_trigger_rssi_dbm_);
+    } else {
+      ESP_LOGI(TAG, "OUTPRIZE remote=? full35=? low24=0x%06X confidence=%s score=%u candidates=%u edges=%u bits=%u rssi=%d dBm",
+               best.low24, confidence, best.score, valid_candidates, this->rx_edge_count_, best.bit_count,
+               this->rx_last_trigger_rssi_dbm_);
+    }
     return true;
   }
 
@@ -977,6 +998,8 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
            this->rx_edge_count_, best.start_index, best.stop_index, best.bit_count, valid_candidates, best.score, confidence);
   ESP_LOGI(TAG, "Binary: %s", binary);
   ESP_LOGI(TAG, "Hex: %s", hexbuf);
+  ESP_LOGI(TAG, "Remote ID / prefix: %s0x%03X", best.bit_count >= 35 ? "" : "? ", best.remote_id);
+  ESP_LOGI(TAG, "Full35: 0x%09llX", static_cast<unsigned long long>(best.full_packet));
   ESP_LOGI(TAG, "Low24: 0x%06X", best.low24);
   ESP_LOGI(TAG, "Timing counts: short=%u long=%u sync=%u", shortish, longish, syncish);
   ESP_LOGI(TAG, "====================================");
@@ -1055,8 +1078,8 @@ bool RFBridgeComponent::send_outprize_low24(uint32_t low24, uint8_t repeats) {
 }
 
 bool RFBridgeComponent::send_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats) {
-  ESP_LOGI(TAG, "OUTPRIZE TX raw remote_prefix=0x%03X low24=0x%06X repeats=%u", remote_id & 0x7FF,
-           low24 & 0xFFFFFF, repeats);
+  ESP_LOGI(TAG, "OUTPRIZE TX raw remote=0x%03X low24=0x%06X full35=0x%09llX repeats=%u", remote_id & 0x7FF,
+           low24 & 0xFFFFFF, static_cast<unsigned long long>(((static_cast<uint64_t>(remote_id & 0x7FF)) << 24) | (low24 & 0xFFFFFFULL)), repeats);
   return this->transmit_low24_(remote_id, low24, repeats);
 }
 
