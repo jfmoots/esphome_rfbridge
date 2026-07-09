@@ -991,6 +991,12 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
     this->outprize_learned_bits_ = best.bit_count;
     this->outprize_learned_capture_no_ = capture_no;
     this->outprize_learned_score_ = best.score;
+    this->outprize_learned_start_index_ = best.start_index;
+    this->outprize_learned_stop_index_ = best.stop_index;
+    this->outprize_learned_edge_count_ = this->rx_edge_count_;
+    for (uint16_t copy_i = 0; copy_i < this->rx_edge_count_ && copy_i < RX_MAX_EDGES; copy_i++) {
+      this->outprize_learned_edges_[copy_i] = this->rx_edges_[copy_i];
+    }
     strncpy(this->outprize_learned_binary_, binary, sizeof(this->outprize_learned_binary_) - 1);
     this->outprize_learned_binary_[sizeof(this->outprize_learned_binary_) - 1] = '\0';
     ESP_LOGI(TAG, "OUTPRIZE_LEARNED capture=%u full35=0x%09llX remote=0x%03X low24=0x%06X bits=%u score=%u stream=%s",
@@ -1434,6 +1440,108 @@ bool RFBridgeComponent::transmit_full35_mode_(uint64_t full35, uint8_t repeats, 
 }
 
 
+
+uint16_t RFBridgeComponent::tx_build_edge_deltas_(uint64_t frame, uint8_t bits, TxFrameMode mode, bool include_preamble, uint16_t *out, uint16_t max_edges) const {
+  uint16_t n = 0;
+  auto add = [&](uint16_t v) {
+    if (n < max_edges) out[n++] = v;
+  };
+
+  if (include_preamble) {
+    add(OUTPRIZE_TX_RESET_GAP_US);
+    add(OUTPRIZE_TX_SYNC_US);
+    add(OUTPRIZE_TX_ZERO_GAP_US);
+  }
+
+  for (uint8_t i = 0; i < bits; i++) {
+    const uint8_t source_bit = (mode == TxFrameMode::LSB_NORMAL || mode == TxFrameMode::LSB_INVERTED) ? i : (bits - 1 - i);
+    bool one = ((frame >> source_bit) & 0x01ULL) != 0;
+    if (mode == TxFrameMode::MSB_INVERTED || mode == TxFrameMode::LSB_INVERTED) {
+      one = !one;
+    }
+    add(OUTPRIZE_TX_PULSE_US);
+    add(one ? OUTPRIZE_TX_ONE_GAP_US : OUTPRIZE_TX_ZERO_GAP_US);
+  }
+  return n;
+}
+
+void RFBridgeComponent::log_outprize_edge_compare_(uint64_t frame, uint8_t bits, TxFrameMode mode) const {
+  if (!this->outprize_learned_valid_ || this->outprize_learned_edge_count_ == 0) {
+    ESP_LOGW(TAG, "OUTPRIZE_COMPARE unavailable; press the OEM remote and wait for OUTPRIZE_LEARNED first");
+    return;
+  }
+
+  uint16_t tx_data[96]{};
+  uint16_t tx_full[100]{};
+  const uint16_t tx_data_count = this->tx_build_edge_deltas_(frame, bits, mode, false, tx_data, 96);
+  const uint16_t tx_full_count = this->tx_build_edge_deltas_(frame, bits, mode, true, tx_full, 100);
+
+  const uint16_t start = this->outprize_learned_start_index_;
+  const uint16_t stop = this->outprize_learned_stop_index_;
+  const uint16_t oem_data_count = (stop >= start) ? static_cast<uint16_t>(stop - start + 1) : 0;
+  const uint16_t cmp = (oem_data_count < tx_data_count) ? oem_data_count : tx_data_count;
+
+  uint32_t abs_sum = 0;
+  uint16_t max_abs = 0;
+  uint16_t over_150 = 0;
+  for (uint16_t i = 0; i < cmp; i++) {
+    const uint16_t oem = this->outprize_learned_edges_[start + i];
+    const uint16_t tx = tx_data[i];
+    const uint16_t diff = oem > tx ? oem - tx : tx - oem;
+    abs_sum += diff;
+    if (diff > max_abs) max_abs = diff;
+    if (diff > 150) over_150++;
+  }
+
+  ESP_LOGI(TAG, "===== OUTPRIZE_COMPARE =====");
+  ESP_LOGI(TAG, "Learned capture=%u full35=0x%09llX bits=%u stream=%s",
+           this->outprize_learned_capture_no_, static_cast<unsigned long long>(this->outprize_learned_full35_),
+           this->outprize_learned_bits_, this->outprize_learned_binary_);
+  ESP_LOGI(TAG, "OEM edges: total=%u data_start=%u data_stop=%u data_count=%u",
+           this->outprize_learned_edge_count_, start, stop, oem_data_count);
+  ESP_LOGI(TAG, "TX simulated: data_count=%u full_with_preamble_count=%u timing[pulse=%u zero_gap=%u one_gap=%u sync=%u reset=%u inter_gap=%u]",
+           tx_data_count, tx_full_count, OUTPRIZE_TX_PULSE_US, OUTPRIZE_TX_ZERO_GAP_US, OUTPRIZE_TX_ONE_GAP_US,
+           OUTPRIZE_TX_SYNC_US, OUTPRIZE_TX_RESET_GAP_US, OUTPRIZE_TX_INTER_FRAME_GAP_US);
+  ESP_LOGI(TAG, "Data comparison: compared=%u avg_abs_error=%u us max_abs_error=%u us over_150us=%u",
+           cmp, cmp == 0 ? 0 : static_cast<unsigned>(abs_sum / cmp), max_abs, over_150);
+
+  for (uint16_t row = 0; row < cmp && row < 72; row += 8) {
+    char line[220];
+    uint16_t pos = 0;
+    pos += snprintf(line + pos, sizeof(line) - pos, "  idx OEM/TX/diff [%02u-%02u]:", row, static_cast<unsigned>(row + 7 < cmp ? row + 7 : cmp - 1));
+    for (uint16_t j = 0; j < 8 && row + j < cmp; j++) {
+      const uint16_t oem = this->outprize_learned_edges_[start + row + j];
+      const uint16_t tx = tx_data[row + j];
+      const uint16_t diff = oem > tx ? oem - tx : tx - oem;
+      pos += snprintf(line + pos, sizeof(line) - pos, " %u/%u/%u", oem, tx, diff);
+    }
+    ESP_LOGI(TAG, "%s", line);
+  }
+
+  const uint16_t pre_start = start >= 4 ? start - 4 : 0;
+  char pre[220];
+  uint16_t p = 0;
+  p += snprintf(pre + p, sizeof(pre) - p, "OEM around frame start [%u-%u]:", pre_start, start + 5 < this->outprize_learned_edge_count_ ? start + 5 : this->outprize_learned_edge_count_ - 1);
+  for (uint16_t i = pre_start; i < this->outprize_learned_edge_count_ && i <= start + 5; i++) {
+    p += snprintf(pre + p, sizeof(pre) - p, " %u", this->outprize_learned_edges_[i]);
+  }
+  ESP_LOGI(TAG, "%s", pre);
+  ESP_LOGI(TAG, "TX with preamble first edges: %u %u %u %u %u %u %u %u",
+           tx_full_count > 0 ? tx_full[0] : 0, tx_full_count > 1 ? tx_full[1] : 0,
+           tx_full_count > 2 ? tx_full[2] : 0, tx_full_count > 3 ? tx_full[3] : 0,
+           tx_full_count > 4 ? tx_full[4] : 0, tx_full_count > 5 ? tx_full[5] : 0,
+           tx_full_count > 6 ? tx_full[6] : 0, tx_full_count > 7 ? tx_full[7] : 0);
+  ESP_LOGI(TAG, "============================");
+}
+
+void RFBridgeComponent::compare_last_outprize_learned() {
+  if (!this->outprize_learned_valid_) {
+    ESP_LOGW(TAG, "OUTPRIZE_COMPARE unavailable; no learned frame");
+    return;
+  }
+  this->log_outprize_edge_compare_(this->outprize_learned_full35_, OUTPRIZE_TX_BITS, TxFrameMode::MSB_NORMAL);
+}
+
 bool RFBridgeComponent::send_ook_test_burst(uint16_t pulse_us, uint16_t pulse_count, uint8_t repeats) {
   return this->transmit_ook_test_burst_(pulse_us, pulse_count, repeats);
 }
@@ -1604,6 +1712,10 @@ void RFBridgeComponent::clear_last_outprize_learned() {
   this->outprize_learned_bits_ = 0;
   this->outprize_learned_capture_no_ = 0;
   this->outprize_learned_score_ = 0;
+  this->outprize_learned_start_index_ = 0;
+  this->outprize_learned_stop_index_ = 0;
+  this->outprize_learned_edge_count_ = 0;
+  memset(this->outprize_learned_edges_, 0, sizeof(this->outprize_learned_edges_));
   this->outprize_learned_binary_[0] = '\0';
   ESP_LOGI(TAG, "OUTPRIZE_LEARNED cleared");
 }

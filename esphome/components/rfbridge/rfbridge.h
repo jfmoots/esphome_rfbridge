@@ -73,6 +73,7 @@ class RFBridgeComponent : public Component {
   bool replay_last_capture(uint8_t repeats = 1);
   bool replay_last_outprize_learned(uint8_t repeats = 8);
   void clear_last_outprize_learned();
+  void compare_last_outprize_learned();
   bool send_ook_test_burst(uint16_t pulse_us = 500, uint16_t pulse_count = 240, uint8_t repeats = 8);
   bool send_ook_carrier_test(uint16_t duration_ms = 500);
 
@@ -203,6 +204,10 @@ class RFBridgeComponent : public Component {
   uint16_t outprize_learned_bits_{0};
   uint32_t outprize_learned_capture_no_{0};
   uint16_t outprize_learned_score_{0};
+  uint16_t outprize_learned_start_index_{0};
+  uint16_t outprize_learned_stop_index_{0};
+  uint16_t outprize_learned_edge_count_{0};
+  uint16_t outprize_learned_edges_[RX_MAX_EDGES]{};
   char outprize_learned_binary_[72]{};
 
   uint32_t outprize_speed_base_(uint8_t speed_percent) const;
@@ -222,6 +227,8 @@ class RFBridgeComponent : public Component {
   bool transmit_full35_mode_(uint64_t full35, uint8_t repeats, TxFrameMode mode, const char *label);
   bool transmit_last_capture_(uint8_t repeats = 1);
   bool transmit_learned_outprize_(uint8_t repeats = 8);
+  uint16_t tx_build_edge_deltas_(uint64_t frame, uint8_t bits, TxFrameMode mode, bool include_preamble, uint16_t *out, uint16_t max_edges) const;
+  void log_outprize_edge_compare_(uint64_t frame, uint8_t bits, TxFrameMode mode) const;
   bool transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pulse_count, uint8_t repeats);
   bool start_ook_carrier_test_(uint16_t duration_ms);
   void finish_ook_carrier_test_();
