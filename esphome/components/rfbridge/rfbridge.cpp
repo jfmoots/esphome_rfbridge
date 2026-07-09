@@ -1129,6 +1129,45 @@ bool RFBridgeComponent::send_outprize_raw_oem_power_off(uint8_t repeats) {
   return this->send_outprize_raw_full35(OEM_POWER_OFF_FULL35, repeats);
 }
 
+bool RFBridgeComponent::send_outprize_power_off_433900(uint8_t repeats) {
+  return this->transmit_power_off_with_frequency_(0x10, 0xB0, 0x3F, "433.900 MHz", repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_433920(uint8_t repeats) {
+  return this->transmit_power_off_with_frequency_(0x10, 0xB0, 0x71, "433.920 MHz", repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_433940(uint8_t repeats) {
+  return this->transmit_power_off_with_frequency_(0x10, 0xB0, 0xA4, "433.940 MHz", repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_433950(uint8_t repeats) {
+  return this->transmit_power_off_with_frequency_(0x10, 0xB0, 0xBD, "433.950 MHz", repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_433970(uint8_t repeats) {
+  return this->transmit_power_off_with_frequency_(0x10, 0xB0, 0xEF, "433.970 MHz", repeats);
+}
+
+void RFBridgeComponent::cc1101_set_tx_frequency_(uint8_t freq2, uint8_t freq1, uint8_t freq0, const char *label) {
+  this->tx_freq2_ = freq2;
+  this->tx_freq1_ = freq1;
+  this->tx_freq0_ = freq0;
+  this->tx_freq_label_ = label;
+}
+
+bool RFBridgeComponent::transmit_power_off_with_frequency_(uint8_t freq2, uint8_t freq1, uint8_t freq0, const char *label, uint8_t repeats) {
+  const uint8_t old2 = this->tx_freq2_;
+  const uint8_t old1 = this->tx_freq1_;
+  const uint8_t old0 = this->tx_freq0_;
+  const char *old_label = this->tx_freq_label_;
+  ESP_LOGI(TAG, "OUTPRIZE TX frequency trim helper: Power Off at %s FREQ=0x%02X%02X%02X", label, freq2, freq1, freq0);
+  this->cc1101_set_tx_frequency_(freq2, freq1, freq0, label);
+  const bool ok = this->send_outprize_low24(0x600000, repeats);
+  this->cc1101_set_tx_frequency_(old2, old1, old0, old_label);
+  return ok;
+}
+
 bool RFBridgeComponent::send_outprize_low24_lsb(uint32_t low24, uint8_t repeats) {
   return this->transmit_low24_mode_(this->outprize_remote_id_, low24, repeats, TxFrameMode::LSB_NORMAL, "LOW24_LSB_NORMAL");
 }
@@ -1156,7 +1195,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   // v1.3.5+ deliberately programs a full async OOK TX profile instead of
   // inheriting the RX/sniffer profile.  The RX decoder is restored after each
   // transmission by cc1101_configure_ook_async_rx_().
-  ESP_LOGI(TAG, "Configuring CC1101 full async OOK TX profile at 433.92 MHz (PA=0x%02X)", CC1101_TX_PA_TEST);
+  ESP_LOGI(TAG, "Configuring CC1101 full async OOK TX profile at %s FREQ=0x%02X%02X%02X (PA=0x%02X)", this->tx_freq_label_, this->tx_freq2_, this->tx_freq1_, this->tx_freq0_, CC1101_TX_PA_TEST);
 
   this->cc1101_write_reg_(cc1101::IOCFG2, cc1101::GDO_IOCFG2_KNOWN_GOOD);
   this->cc1101_write_reg_(cc1101::IOCFG1, 0x2E);
@@ -1171,9 +1210,9 @@ void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   this->cc1101_write_reg_(cc1101::CHANNR, 0x00);
   this->cc1101_write_reg_(cc1101::FSCTRL1, 0x06);
   this->cc1101_write_reg_(cc1101::FSCTRL0, 0x00);
-  this->cc1101_write_reg_(cc1101::FREQ2, 0x10);
-  this->cc1101_write_reg_(cc1101::FREQ1, 0xB0);
-  this->cc1101_write_reg_(cc1101::FREQ0, 0x71);
+  this->cc1101_write_reg_(cc1101::FREQ2, this->tx_freq2_);
+  this->cc1101_write_reg_(cc1101::FREQ1, this->tx_freq1_);
+  this->cc1101_write_reg_(cc1101::FREQ0, this->tx_freq0_);
   this->cc1101_write_reg_(cc1101::MDMCFG4, 0xF6);
   this->cc1101_write_reg_(cc1101::MDMCFG3, 0x43);
   this->cc1101_write_reg_(cc1101::MDMCFG2, 0x30);
@@ -1203,6 +1242,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   ESP_LOGI(TAG, "  PKTCTRL0 = 0x%02X", this->cc1101_read_reg_(cc1101::PKTCTRL0));
   ESP_LOGI(TAG, "  FREND0   = 0x%02X", this->cc1101_read_reg_(cc1101::FREND0));
   ESP_LOGI(TAG, "  MDMCFG2  = 0x%02X", this->cc1101_read_reg_(cc1101::MDMCFG2));
+  ESP_LOGI(TAG, "  FREQ     = 0x%02X%02X%02X (%s)", this->cc1101_read_reg_(cc1101::FREQ2), this->cc1101_read_reg_(cc1101::FREQ1), this->cc1101_read_reg_(cc1101::FREQ0), this->tx_freq_label_);
   ESP_LOGI(TAG, "  PATABLE  = 0x%02X programmed", CC1101_TX_PA_TEST);
 }
 

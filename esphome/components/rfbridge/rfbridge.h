@@ -57,6 +57,14 @@ class RFBridgeComponent : public Component {
   bool send_outprize_power_off_inv_lsb(uint8_t repeats = 8);
   bool send_outprize_raw_oem_power_off(uint8_t repeats = 8);
 
+  // v1.3.12 frequency-trim test helpers for Power Off.
+  bool send_outprize_power_off_433900(uint8_t repeats = 8);
+  bool send_outprize_power_off_433920(uint8_t repeats = 8);
+  bool send_outprize_power_off_433940(uint8_t repeats = 8);
+  bool send_outprize_power_off_433950(uint8_t repeats = 8);
+  bool send_outprize_power_off_433970(uint8_t repeats = 8);
+
+
   bool send_outprize_low24_lsb(uint32_t low24, uint8_t repeats = 8);
   bool send_outprize_low24_inverted(uint32_t low24, uint8_t repeats = 8);
   bool send_outprize_low24_lsb_inverted(uint32_t low24, uint8_t repeats = 8);
@@ -156,6 +164,10 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t OUTPRIZE_SYNC_US_MAX = 5200;
 
   bool diagnostic_logging_{false};
+  uint8_t tx_freq2_{0x10};
+  uint8_t tx_freq1_{0xB0};
+  uint8_t tx_freq0_{0x71};
+  const char *tx_freq_label_{"433.920 MHz"};
   uint32_t outprize_remote_id_{OUTPRIZE_DEFAULT_PREFIX};
   bool rx_last_outprize_like_{false};
   bool rx_enabled_{false};
@@ -195,6 +207,8 @@ class RFBridgeComponent : public Component {
 
   uint32_t outprize_speed_base_(uint8_t speed_percent) const;
   void cc1101_configure_ook_async_tx_();
+  void cc1101_set_tx_frequency_(uint8_t freq2, uint8_t freq1, uint8_t freq0, const char *label);
+  bool transmit_power_off_with_frequency_(uint8_t freq2, uint8_t freq1, uint8_t freq0, const char *label, uint8_t repeats);
   bool cc1101_calibrate_for_tx_();
   void tx_write_data_(bool level);
   void tx_log_marcstate_(const char *stage);
