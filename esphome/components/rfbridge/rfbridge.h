@@ -72,6 +72,7 @@ class RFBridgeComponent : public Component {
   bool send_outprize_power_off_rf_pa_60(uint8_t repeats = 8);
   bool send_outprize_power_off_rf_frend0_10(uint8_t repeats = 8);
   bool send_outprize_power_off_rf_mdmcfg2_33(uint8_t repeats = 8);
+  bool send_outprize_power_off_profile(uint8_t profile, uint8_t repeats = 8);
 
   bool send_outprize_low24_lsb(uint32_t low24, uint8_t repeats = 8);
   bool send_outprize_low24_inverted(uint32_t low24, uint8_t repeats = 8);

@@ -1,5 +1,5 @@
-# ESPHome RF Bridge v1.3.18
+# ESPHome RF Bridge v1.3.19
 
-ESPHome external component for the Outprize RF bridge using ESP32 + CC1101.
+RF profile API fix for Outprize Power Off characterization.
 
-v1.3.18 adds TX RF mode characterization helpers while preserving the learned/analyze diagnostic tooling from v1.3.17.
+Use `send_outprize_power_off_profile(1..6)` from ESPHome lambda buttons to test the RF-layer profiles included in this build.

@@ -1,20 +1,14 @@
-# v1.3.18 – TX RF Mode Characterization
+# v1.3.19 – RF Profile API Fix
 
-This release keeps the learned/proven Outprize payload and timing unchanged, and adds radio-layer transmit profile experiments.
+This release fixes the v1.3.18 YAML/API mismatch by exposing the RF profile selector method that the test YAML uses.
 
 Changes:
+- Adds `send_outprize_power_off_profile(profile)` as a public C++ helper.
+- Maps profile 1..6 to the RF characterization helpers already present in v1.3.18.
+- Keeps the learned/proven Outprize Power Off payload unchanged.
 - Keeps v1.3.17 full RF capture timeline diagnostics.
-- Keeps learned-frame capture diagnostics.
-- Keeps learned-vs-TX edge comparison diagnostics.
-- Keeps 30–35 bit candidate alignment diagnostics.
-- Keeps the OEM Power Off payload unchanged.
-- Adds Power Off RF profile helpers that vary only TX radio-layer behavior:
-  - default async OOK baseline
-  - inverted async OOK electrical polarity
-  - lower PATABLE PA levels
-  - alternate FREND0
-  - alternate MDMCFG2
-- Logs the selected PA, FREND0, MDMCFG2, and inverted-OOK state during TX setup.
+- Keeps learned-frame, learned-vs-TX compare, and 30–35 bit candidate diagnostics.
+- Keeps v1.3.16 OEM-header transmitter behavior unchanged.
 
 Goal:
-Determine whether the fan is rejecting the ESP transmission because of RF/electrical transmitter behavior rather than payload, bit order, or timing.
+Allow Home Assistant/ESPHome YAML to select RF characterization profiles without calling missing methods.

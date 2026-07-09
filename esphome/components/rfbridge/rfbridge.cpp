@@ -1326,6 +1326,27 @@ bool RFBridgeComponent::send_outprize_power_off_rf_mdmcfg2_33(uint8_t repeats) {
   return this->transmit_power_off_with_rf_profile_("RF_MDMCFG2_0x33", false, 0xC0, 0x11, 0x33, repeats);
 }
 
+
+bool RFBridgeComponent::send_outprize_power_off_profile(uint8_t profile, uint8_t repeats) {
+  switch (profile) {
+    case 1:
+      return this->send_outprize_power_off_rf_default(repeats);
+    case 2:
+      return this->send_outprize_power_off_rf_inverted_ook(repeats);
+    case 3:
+      return this->send_outprize_power_off_rf_pa_80(repeats);
+    case 4:
+      return this->send_outprize_power_off_rf_pa_60(repeats);
+    case 5:
+      return this->send_outprize_power_off_rf_frend0_10(repeats);
+    case 6:
+      return this->send_outprize_power_off_rf_mdmcfg2_33(repeats);
+    default:
+      ESP_LOGW(TAG, "OUTPRIZE TX RF profile helper: unknown profile %u; valid profiles are 1..6", profile);
+      return false;
+  }
+}
+
 void RFBridgeComponent::cc1101_set_tx_frequency_(uint8_t freq2, uint8_t freq1, uint8_t freq0, const char *label) {
   this->tx_freq2_ = freq2;
   this->tx_freq1_ = freq1;
