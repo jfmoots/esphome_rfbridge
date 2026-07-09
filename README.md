@@ -1,7 +1,5 @@
-# ESPHome RF Bridge v1.3.17
+# ESPHome RF Bridge v1.3.18
 
-This release adds full RF capture timeline diagnostics while keeping the v1.3.16 transmitter behavior unchanged.
+ESPHome external component for the Outprize RF bridge using ESP32 + CC1101.
 
-The goal is to understand what the ESP actually captures from the OEM remote before and around the decoded Outprize frame start. The new diagnostics print the RSSI-triggered capture as cumulative edge timings and mark the learned frame boundaries when available.
-
-No YAML changes are required from v1.3.16.
+v1.3.18 adds TX RF mode characterization helpers while preserving the learned/analyze diagnostic tooling from v1.3.17.

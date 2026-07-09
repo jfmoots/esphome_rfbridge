@@ -64,6 +64,14 @@ class RFBridgeComponent : public Component {
   bool send_outprize_power_off_433950(uint8_t repeats = 8);
   bool send_outprize_power_off_433970(uint8_t repeats = 8);
 
+  // v1.3.18 RF-mode characterization helpers. These keep the learned/proven
+  // Outprize Power Off payload unchanged and vary only radio-layer TX settings.
+  bool send_outprize_power_off_rf_default(uint8_t repeats = 8);
+  bool send_outprize_power_off_rf_inverted_ook(uint8_t repeats = 8);
+  bool send_outprize_power_off_rf_pa_80(uint8_t repeats = 8);
+  bool send_outprize_power_off_rf_pa_60(uint8_t repeats = 8);
+  bool send_outprize_power_off_rf_frend0_10(uint8_t repeats = 8);
+  bool send_outprize_power_off_rf_mdmcfg2_33(uint8_t repeats = 8);
 
   bool send_outprize_low24_lsb(uint32_t low24, uint8_t repeats = 8);
   bool send_outprize_low24_inverted(uint32_t low24, uint8_t repeats = 8);
@@ -216,8 +224,10 @@ class RFBridgeComponent : public Component {
   void cc1101_configure_ook_async_tx_();
   void cc1101_set_tx_frequency_(uint8_t freq2, uint8_t freq1, uint8_t freq0, const char *label);
   bool transmit_power_off_with_frequency_(uint8_t freq2, uint8_t freq1, uint8_t freq0, const char *label, uint8_t repeats);
+  bool transmit_power_off_with_rf_profile_(const char *label, bool inverted_ook, uint8_t pa, uint8_t frend0, uint8_t mdmcfg2, uint8_t repeats);
   bool cc1101_calibrate_for_tx_();
   void tx_write_data_(bool level);
+  void tx_write_carrier_(bool on);
   void tx_log_marcstate_(const char *stage);
   void tx_dump_status_(const char *stage);
   enum class TxFrameMode : uint8_t { MSB_NORMAL = 0, LSB_NORMAL = 1, MSB_INVERTED = 2, LSB_INVERTED = 3 };
@@ -248,6 +258,11 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t OUTPRIZE_TX_BITS = 35;
   static constexpr uint32_t OUTPRIZE_DEFAULT_PREFIX = 0x6CF;
   static constexpr uint8_t CC1101_TX_PA_TEST = 0xC0;
+
+  bool tx_ook_inverted_{false};
+  uint8_t tx_pa_value_{CC1101_TX_PA_TEST};
+  uint8_t tx_frend0_value_{0x11};
+  uint8_t tx_mdmcfg2_value_{0x30};
 
   bool tx_carrier_active_{false};
   uint32_t tx_carrier_started_ms_{0};

@@ -160,7 +160,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
   // DRATE_M=0x43 gives ~2.0 kbps with a 26 MHz crystal.
   this->cc1101_write_reg_(cc1101::MDMCFG4, 0xF6);
   this->cc1101_write_reg_(cc1101::MDMCFG3, 0x43);
-  this->cc1101_write_reg_(cc1101::MDMCFG2, 0x30);
+  this->cc1101_write_reg_(cc1101::MDMCFG2, this->tx_mdmcfg2_value_);
   this->cc1101_write_reg_(cc1101::MDMCFG1, 0x22);
   this->cc1101_write_reg_(cc1101::MDMCFG0, 0xF8);
   this->cc1101_write_reg_(cc1101::MCSM0, 0x18);
@@ -169,7 +169,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
   this->cc1101_write_reg_(cc1101::AGCCTRL1, 0x00);
   this->cc1101_write_reg_(cc1101::AGCCTRL0, 0x91);
   this->cc1101_write_reg_(cc1101::FREND1, 0x56);
-  this->cc1101_write_reg_(cc1101::FREND0, 0x11);
+  this->cc1101_write_reg_(cc1101::FREND0, this->tx_frend0_value_);
   this->cc1101_write_reg_(cc1101::FSCAL3, 0xE9);
   this->cc1101_write_reg_(cc1101::FSCAL2, 0x2A);
   this->cc1101_write_reg_(cc1101::FSCAL1, 0x00);
@@ -178,7 +178,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_rx_() {
   this->cc1101_write_reg_(cc1101::TEST1, 0x35);
   this->cc1101_write_reg_(cc1101::TEST0, 0x09);
 
-  this->cc1101_write_patable_(CC1101_TX_PA_TEST);
+  this->cc1101_write_patable_(this->tx_pa_value_);
 
   ESP_LOGI(TAG, "  IOCFG0   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG0));
   ESP_LOGI(TAG, "  IOCFG2   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG2));
@@ -1302,6 +1302,30 @@ bool RFBridgeComponent::send_outprize_power_off_433970(uint8_t repeats) {
   return this->transmit_power_off_with_frequency_(0x10, 0xB0, 0xEF, "433.970 MHz", repeats);
 }
 
+bool RFBridgeComponent::send_outprize_power_off_rf_default(uint8_t repeats) {
+  return this->transmit_power_off_with_rf_profile_("RF_DEFAULT", false, 0xC0, 0x11, 0x30, repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_rf_inverted_ook(uint8_t repeats) {
+  return this->transmit_power_off_with_rf_profile_("RF_INVERTED_OOK", true, 0xC0, 0x11, 0x30, repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_rf_pa_80(uint8_t repeats) {
+  return this->transmit_power_off_with_rf_profile_("RF_PA_0x80", false, 0x80, 0x11, 0x30, repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_rf_pa_60(uint8_t repeats) {
+  return this->transmit_power_off_with_rf_profile_("RF_PA_0x60", false, 0x60, 0x11, 0x30, repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_rf_frend0_10(uint8_t repeats) {
+  return this->transmit_power_off_with_rf_profile_("RF_FREND0_0x10", false, 0xC0, 0x10, 0x30, repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_rf_mdmcfg2_33(uint8_t repeats) {
+  return this->transmit_power_off_with_rf_profile_("RF_MDMCFG2_0x33", false, 0xC0, 0x11, 0x33, repeats);
+}
+
 void RFBridgeComponent::cc1101_set_tx_frequency_(uint8_t freq2, uint8_t freq1, uint8_t freq0, const char *label) {
   this->tx_freq2_ = freq2;
   this->tx_freq1_ = freq1;
@@ -1318,6 +1342,26 @@ bool RFBridgeComponent::transmit_power_off_with_frequency_(uint8_t freq2, uint8_
   this->cc1101_set_tx_frequency_(freq2, freq1, freq0, label);
   const bool ok = this->send_outprize_low24(0x600000, repeats);
   this->cc1101_set_tx_frequency_(old2, old1, old0, old_label);
+  return ok;
+}
+
+bool RFBridgeComponent::transmit_power_off_with_rf_profile_(const char *label, bool inverted_ook, uint8_t pa, uint8_t frend0, uint8_t mdmcfg2, uint8_t repeats) {
+  const bool old_inverted = this->tx_ook_inverted_;
+  const uint8_t old_pa = this->tx_pa_value_;
+  const uint8_t old_frend0 = this->tx_frend0_value_;
+  const uint8_t old_mdmcfg2 = this->tx_mdmcfg2_value_;
+
+  ESP_LOGI(TAG, "OUTPRIZE TX RF profile helper: %s inverted_ook=%s PA=0x%02X FREND0=0x%02X MDMCFG2=0x%02X",
+           label, YESNO(inverted_ook), pa, frend0, mdmcfg2);
+  this->tx_ook_inverted_ = inverted_ook;
+  this->tx_pa_value_ = pa;
+  this->tx_frend0_value_ = frend0;
+  this->tx_mdmcfg2_value_ = mdmcfg2;
+  const bool ok = this->transmit_low24_mode_(this->outprize_remote_id_, 0x600000, repeats, TxFrameMode::MSB_NORMAL, label);
+  this->tx_ook_inverted_ = old_inverted;
+  this->tx_pa_value_ = old_pa;
+  this->tx_frend0_value_ = old_frend0;
+  this->tx_mdmcfg2_value_ = old_mdmcfg2;
   return ok;
 }
 
@@ -1348,7 +1392,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   // v1.3.5+ deliberately programs a full async OOK TX profile instead of
   // inheriting the RX/sniffer profile.  The RX decoder is restored after each
   // transmission by cc1101_configure_ook_async_rx_().
-  ESP_LOGI(TAG, "Configuring CC1101 full async OOK TX profile at %s FREQ=0x%02X%02X%02X (PA=0x%02X)", this->tx_freq_label_, this->tx_freq2_, this->tx_freq1_, this->tx_freq0_, CC1101_TX_PA_TEST);
+  ESP_LOGI(TAG, "Configuring CC1101 full async OOK TX profile at %s FREQ=0x%02X%02X%02X (PA=0x%02X FREND0=0x%02X MDMCFG2=0x%02X inverted_ook=%s)", this->tx_freq_label_, this->tx_freq2_, this->tx_freq1_, this->tx_freq0_, this->tx_pa_value_, this->tx_frend0_value_, this->tx_mdmcfg2_value_, YESNO(this->tx_ook_inverted_));
 
   this->cc1101_write_reg_(cc1101::IOCFG2, cc1101::GDO_IOCFG2_KNOWN_GOOD);
   this->cc1101_write_reg_(cc1101::IOCFG1, 0x2E);
@@ -1368,7 +1412,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   this->cc1101_write_reg_(cc1101::FREQ0, this->tx_freq0_);
   this->cc1101_write_reg_(cc1101::MDMCFG4, 0xF6);
   this->cc1101_write_reg_(cc1101::MDMCFG3, 0x43);
-  this->cc1101_write_reg_(cc1101::MDMCFG2, 0x30);
+  this->cc1101_write_reg_(cc1101::MDMCFG2, this->tx_mdmcfg2_value_);
   this->cc1101_write_reg_(cc1101::MDMCFG1, 0x22);
   this->cc1101_write_reg_(cc1101::MDMCFG0, 0xF8);
   this->cc1101_write_reg_(cc1101::DEVIATN, 0x00);
@@ -1381,7 +1425,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   this->cc1101_write_reg_(cc1101::AGCCTRL1, 0x00);
   this->cc1101_write_reg_(cc1101::AGCCTRL0, 0x91);
   this->cc1101_write_reg_(cc1101::FREND1, 0x56);
-  this->cc1101_write_reg_(cc1101::FREND0, 0x11);
+  this->cc1101_write_reg_(cc1101::FREND0, this->tx_frend0_value_);
   this->cc1101_write_reg_(cc1101::FSCAL3, 0xE9);
   this->cc1101_write_reg_(cc1101::FSCAL2, 0x2A);
   this->cc1101_write_reg_(cc1101::FSCAL1, 0x00);
@@ -1389,14 +1433,14 @@ void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   this->cc1101_write_reg_(cc1101::TEST2, 0x81);
   this->cc1101_write_reg_(cc1101::TEST1, 0x35);
   this->cc1101_write_reg_(cc1101::TEST0, 0x09);
-  this->cc1101_write_patable_(CC1101_TX_PA_TEST);
+  this->cc1101_write_patable_(this->tx_pa_value_);
 
   ESP_LOGI(TAG, "  IOCFG0   = 0x%02X", this->cc1101_read_reg_(cc1101::IOCFG0));
   ESP_LOGI(TAG, "  PKTCTRL0 = 0x%02X", this->cc1101_read_reg_(cc1101::PKTCTRL0));
   ESP_LOGI(TAG, "  FREND0   = 0x%02X", this->cc1101_read_reg_(cc1101::FREND0));
   ESP_LOGI(TAG, "  MDMCFG2  = 0x%02X", this->cc1101_read_reg_(cc1101::MDMCFG2));
   ESP_LOGI(TAG, "  FREQ     = 0x%02X%02X%02X (%s)", this->cc1101_read_reg_(cc1101::FREQ2), this->cc1101_read_reg_(cc1101::FREQ1), this->cc1101_read_reg_(cc1101::FREQ0), this->tx_freq_label_);
-  ESP_LOGI(TAG, "  PATABLE  = 0x%02X programmed", CC1101_TX_PA_TEST);
+  ESP_LOGI(TAG, "  PATABLE  = 0x%02X programmed", this->tx_pa_value_);
 }
 
 bool RFBridgeComponent::cc1101_calibrate_for_tx_() {
@@ -1424,6 +1468,13 @@ void RFBridgeComponent::tx_write_data_(bool level) {
   if (this->gdo0_pin_ != nullptr) {
     this->gdo0_pin_->digital_write(level);
   }
+}
+
+void RFBridgeComponent::tx_write_carrier_(bool on) {
+  // Normal async OOK profile observed so far: ESP LOW = carrier on, ESP HIGH = carrier off.
+  // v1.3.18 can invert this electrical polarity without changing payload bits.
+  const bool level = this->tx_ook_inverted_ ? on : !on;
+  this->tx_write_data_(level);
 }
 
 void RFBridgeComponent::tx_log_marcstate_(const char *stage) {
@@ -1468,13 +1519,13 @@ void RFBridgeComponent::tx_send_frame_bits_(uint64_t frame, uint8_t bits, TxFram
     if (mode == TxFrameMode::MSB_INVERTED || mode == TxFrameMode::LSB_INVERTED) {
       one = !one;
     }
-    this->tx_write_data_(false);  // carrier on
+    this->tx_write_carrier_(true);  // carrier on
     delayMicroseconds(OUTPRIZE_TX_PULSE_US);
-    this->tx_write_data_(true);   // carrier off / symbol gap
+    this->tx_write_carrier_(false); // carrier off / symbol gap
     delayMicroseconds(one ? OUTPRIZE_TX_ONE_GAP_US : OUTPRIZE_TX_ZERO_GAP_US);
   }
 
-  this->tx_write_data_(true);
+  this->tx_write_carrier_(false);
 }
 
 void RFBridgeComponent::tx_send_outprize_frame_(uint32_t prefix, uint32_t low24) {
@@ -1546,7 +1597,7 @@ bool RFBridgeComponent::transmit_full35_mode_(uint64_t full35, uint8_t repeats, 
   this->tx_dump_status_("after SCAL");
   ESP_LOGI(TAG, "GDO0 direction: ESP output -> CC1101 async TX data input");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->tx_write_data_(true);  // carrier off while entering TX
+  this->tx_write_carrier_(false);  // carrier off while entering TX
   delayMicroseconds(2000);
   const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
   ESP_LOGI(TAG, "CC1101 TX strobe STX status=0x%02X", stx_status);
@@ -1557,9 +1608,9 @@ bool RFBridgeComponent::transmit_full35_mode_(uint64_t full35, uint8_t repeats, 
   // synthetic reset/sync delimiter.  The learned Power Off capture starts with
   // two long edge intervals before the PWM payload: about 4.6 ms carrier-on,
   // then about 4.5 ms carrier-off, then the first data pulse.
-  this->tx_write_data_(false);  // carrier on / OEM header lead-in
+  this->tx_write_carrier_(true);  // carrier on / OEM header lead-in
   delayMicroseconds(OUTPRIZE_TX_HEADER_ON_US);
-  this->tx_write_data_(true);   // carrier off / OEM header space
+  this->tx_write_carrier_(false); // carrier off / OEM header space
   delayMicroseconds(OUTPRIZE_TX_HEADER_OFF_US);
 
   for (uint8_t i = 0; i < repeats; i++) {
@@ -1567,7 +1618,7 @@ bool RFBridgeComponent::transmit_full35_mode_(uint64_t full35, uint8_t repeats, 
     delayMicroseconds(OUTPRIZE_TX_INTER_FRAME_GAP_US);
   }
 
-  this->tx_write_data_(true);  // carrier off before restore
+  this->tx_write_carrier_(false);  // carrier off before restore
   delayMicroseconds(1000);
   this->tx_log_marcstate_("before idle restore");
   this->cc1101_enter_idle_();
