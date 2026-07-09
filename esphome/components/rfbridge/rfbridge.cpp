@@ -1107,8 +1107,10 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
     this->outprize_learned_start_index_ = best.start_index;
     this->outprize_learned_stop_index_ = best.stop_index;
     this->outprize_learned_edge_count_ = this->rx_edge_count_;
+    this->outprize_learned_initial_level_ = this->rx_capture_initial_level_;
     for (uint16_t copy_i = 0; copy_i < this->rx_edge_count_ && copy_i < RX_MAX_EDGES; copy_i++) {
       this->outprize_learned_edges_[copy_i] = this->rx_edges_[copy_i];
+      this->outprize_learned_levels_[copy_i] = this->rx_levels_[copy_i];
     }
     strncpy(this->outprize_learned_binary_, binary, sizeof(this->outprize_learned_binary_) - 1);
     this->outprize_learned_binary_[sizeof(this->outprize_learned_binary_) - 1] = '\0';
@@ -1773,7 +1775,9 @@ void RFBridgeComponent::set_outprize_learned_frame(uint64_t full35) {
   this->outprize_learned_start_index_ = 0;
   this->outprize_learned_stop_index_ = 0;
   this->outprize_learned_edge_count_ = 0;
+  this->outprize_learned_initial_level_ = 0;
   memset(this->outprize_learned_edges_, 0, sizeof(this->outprize_learned_edges_));
+  memset(this->outprize_learned_levels_, 0, sizeof(this->outprize_learned_levels_));
 
   for (uint8_t i = 0; i < OUTPRIZE_TX_BITS; i++) {
     const uint8_t bit_index = OUTPRIZE_TX_BITS - 1 - i;
@@ -1996,7 +2000,9 @@ void RFBridgeComponent::clear_last_outprize_learned() {
   this->outprize_learned_start_index_ = 0;
   this->outprize_learned_stop_index_ = 0;
   this->outprize_learned_edge_count_ = 0;
+  this->outprize_learned_initial_level_ = 0;
   memset(this->outprize_learned_edges_, 0, sizeof(this->outprize_learned_edges_));
+  memset(this->outprize_learned_levels_, 0, sizeof(this->outprize_learned_levels_));
   this->outprize_learned_binary_[0] = '\0';
   ESP_LOGI(TAG, "OUTPRIZE_LEARNED cleared");
 }
@@ -2013,48 +2019,80 @@ bool RFBridgeComponent::transmit_learned_outprize_(uint8_t repeats) {
   return this->transmit_full35_mode_(this->outprize_learned_full35_, repeats, TxFrameMode::MSB_NORMAL, "LEARNED_FULL35_MSB_NORMAL");
 }
 
-bool RFBridgeComponent::transmit_last_capture_(uint8_t repeats) {
+
+bool RFBridgeComponent::replay_last_outprize_raw_capture(uint8_t repeats) {
+  return this->transmit_learned_raw_outprize_(repeats);
+}
+
+bool RFBridgeComponent::transmit_learned_raw_outprize_(uint8_t repeats) {
+  if (!this->outprize_learned_valid_ || this->outprize_learned_edge_count_ < OUTPRIZE_MIN_EDGES) {
+    ESP_LOGW(TAG, "OUTPRIZE raw replay unavailable; press the OEM remote and wait for OUTPRIZE_LEARNED first (valid=%s edges=%u)",
+             YESNO(this->outprize_learned_valid_), this->outprize_learned_edge_count_);
+    return false;
+  }
+  ESP_LOGI(TAG, "OUTPRIZE raw learned replay start capture=%u full35=0x%09llX edges=%u initial_gdo0=%u repeats=%u start=%u stop=%u",
+           this->outprize_learned_capture_no_, static_cast<unsigned long long>(this->outprize_learned_full35_),
+           this->outprize_learned_edge_count_, this->outprize_learned_initial_level_, repeats,
+           this->outprize_learned_start_index_, this->outprize_learned_stop_index_);
+  return this->transmit_raw_edge_capture_(this->outprize_learned_edges_, this->outprize_learned_levels_,
+                                          this->outprize_learned_edge_count_, this->outprize_learned_initial_level_,
+                                          repeats, "LEARNED_RAW_EDGES");
+}
+
+bool RFBridgeComponent::transmit_raw_edge_capture_(const uint16_t *edges, const uint8_t *levels, uint16_t edge_count,
+                                                   uint8_t initial_level, uint8_t repeats, const char *label) {
   if (!this->cc1101_configured_ || this->gdo0_pin_ == nullptr) {
-    ESP_LOGE(TAG, "RF replay unavailable; CC1101 configured=%s gdo0=%s", YESNO(this->cc1101_configured_),
+    ESP_LOGE(TAG, "RF raw replay unavailable; CC1101 configured=%s gdo0=%s", YESNO(this->cc1101_configured_),
              this->gdo0_pin_ == nullptr ? "missing" : "present");
     return false;
   }
-  if (this->rx_edge_count_ < RX_MIN_EDGES) {
-    ESP_LOGW(TAG, "RF replay unavailable; no usable capture stored (edges=%u)", this->rx_edge_count_);
+  if (edges == nullptr || levels == nullptr || edge_count < RX_MIN_EDGES) {
+    ESP_LOGW(TAG, "RF raw replay unavailable; no usable edge capture stored (edges=%u)", edge_count);
     return false;
   }
   if (repeats == 0) repeats = 1;
-  if (repeats > 8) repeats = 8;
+  if (repeats > 4) repeats = 4;
 
-  const uint16_t edge_count = this->rx_edge_count_;
-  uint16_t edges[RX_MAX_EDGES];
-  uint8_t levels[RX_MAX_EDGES];
-  for (uint16_t i = 0; i < edge_count; i++) {
-    edges[i] = this->rx_edges_[i];
-    levels[i] = this->rx_levels_[i];
+  uint32_t single_duration = 0;
+  for (uint16_t i = 0; i < edge_count; i++) single_duration += edges[i];
+  ESP_LOGI(TAG, "RF raw replay start label=%s edges=%u initial_gdo0=%u repeats=%u single_duration=%u us gap=%u us",
+           label, edge_count, initial_level, repeats, single_duration, OUTPRIZE_TX_INTER_FRAME_GAP_US);
+
+  if (this->diagnostic_logging_) {
+    char line[220];
+    for (uint16_t row = 0; row < edge_count && row < 96; row += 8) {
+      int pos = snprintf(line, sizeof(line), "  raw_edges[%03u-%03u]", static_cast<unsigned>(row),
+                         static_cast<unsigned>((row + 7 < edge_count) ? row + 7 : edge_count - 1));
+      for (uint16_t j = row; j < edge_count && j < row + 8 && pos > 0 && pos < static_cast<int>(sizeof(line)); j++) {
+        pos += snprintf(line + pos, sizeof(line) - pos, " %u/%u", edges[j], levels[j]);
+      }
+      ESP_LOGI(TAG, "%s", line);
+    }
+    if (edge_count > 96) ESP_LOGI(TAG, "  raw edge log truncated at 96 of %u edges", edge_count);
   }
-
-  ESP_LOGI(TAG, "RF replay last capture start edges=%u repeats=%u", edge_count, repeats);
 
   this->rx_enabled_ = false;
+  this->tx_log_marcstate_("raw before idle");
   this->cc1101_configure_ook_async_tx_();
-  this->tx_dump_status_("replay after tx config");
+  this->tx_dump_status_("raw after tx config");
   const bool calibrated = this->cc1101_calibrate_for_tx_();
   if (!calibrated) {
-    ESP_LOGW(TAG, "CC1101 TX calibration did not report IDLE before replay STX; continuing for diagnostics");
+    ESP_LOGW(TAG, "CC1101 TX calibration did not report IDLE before raw replay STX; continuing for diagnostics");
   }
-  this->tx_dump_status_("replay after SCAL");
+  this->tx_dump_status_("raw after SCAL");
   ESP_LOGI(TAG, "GDO0 direction: ESP output -> CC1101 async TX data input");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->tx_write_data_(false);
+
+  bool current_level = initial_level != 0;
+  this->tx_write_data_(current_level);
   delayMicroseconds(2000);
   const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
-  ESP_LOGI(TAG, "CC1101 TX replay STX status=0x%02X", stx_status);
+  ESP_LOGI(TAG, "CC1101 TX raw replay STX status=0x%02X", stx_status);
   delayMicroseconds(1000);
-  this->tx_dump_status_("replay after STX");
+  this->tx_dump_status_("raw after STX");
 
   for (uint8_t r = 0; r < repeats; r++) {
-    bool current_level = levels[0] == 0;  // level before first captured edge
+    current_level = initial_level != 0;
     this->tx_write_data_(current_level);
     for (uint16_t i = 0; i < edge_count; i++) {
       delayMicroseconds(edges[i]);
@@ -2067,7 +2105,9 @@ bool RFBridgeComponent::transmit_last_capture_(uint8_t repeats) {
 
   this->tx_write_data_(false);
   delayMicroseconds(1000);
+  this->tx_log_marcstate_("raw before idle restore");
   this->cc1101_enter_idle_();
+  this->tx_log_marcstate_("raw after idle restore");
 
   ESP_LOGI(TAG, "GDO0 direction: ESP input <- CC1101 async RX data output");
   this->gdo0_pin_->pin_mode(gpio::FLAG_INPUT);
@@ -2077,8 +2117,23 @@ bool RFBridgeComponent::transmit_last_capture_(uint8_t repeats) {
   this->rx_last_capture_ms_ = millis();
   this->rx_enabled_ = true;
 
-  ESP_LOGI(TAG, "RF replay last capture complete edges=%u", edge_count);
+  ESP_LOGI(TAG, "RF raw replay complete label=%s edges=%u repeats=%u", label, edge_count, repeats);
   return true;
+}
+
+bool RFBridgeComponent::transmit_last_capture_(uint8_t repeats) {
+  if (this->rx_edge_count_ < RX_MIN_EDGES) {
+    ESP_LOGW(TAG, "RF replay unavailable; no usable capture stored (edges=%u)", this->rx_edge_count_);
+    return false;
+  }
+  uint16_t edges[RX_MAX_EDGES];
+  uint8_t levels[RX_MAX_EDGES];
+  const uint16_t edge_count = this->rx_edge_count_;
+  for (uint16_t i = 0; i < edge_count; i++) {
+    edges[i] = this->rx_edges_[i];
+    levels[i] = this->rx_levels_[i];
+  }
+  return this->transmit_raw_edge_capture_(edges, levels, edge_count, this->rx_capture_initial_level_, repeats, "LAST_RAW_CAPTURE");
 }
 
 }  // namespace rfbridge

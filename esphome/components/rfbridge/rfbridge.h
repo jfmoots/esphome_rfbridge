@@ -89,6 +89,11 @@ class RFBridgeComponent : public Component {
   void set_outprize_learned_frame(uint64_t full35 = ((static_cast<uint64_t>(OUTPRIZE_DEFAULT_PREFIX) << 24) | 0x600000ULL));
   bool replay_known_outprize_power_off(uint8_t repeats = 8);
   void compare_known_outprize_power_off();
+
+  // v1.3.21: raw OEM edge replay. These bypass the 35-bit encoder and replay
+  // the captured edge timing array directly through the CC1101 async TX input.
+  bool replay_last_outprize_raw_capture(uint8_t repeats = 1);
+  bool replay_last_raw_capture(uint8_t repeats = 1) { return this->replay_last_capture(repeats); }
   bool send_ook_test_burst(uint16_t pulse_us = 500, uint16_t pulse_count = 240, uint8_t repeats = 8);
   bool send_ook_carrier_test(uint16_t duration_ms = 500);
 
@@ -224,7 +229,9 @@ class RFBridgeComponent : public Component {
   uint16_t outprize_learned_start_index_{0};
   uint16_t outprize_learned_stop_index_{0};
   uint16_t outprize_learned_edge_count_{0};
+  uint8_t outprize_learned_initial_level_{0};
   uint16_t outprize_learned_edges_[RX_MAX_EDGES]{};
+  uint8_t outprize_learned_levels_[RX_MAX_EDGES]{};
   char outprize_learned_binary_[72]{};
 
   uint32_t outprize_speed_base_(uint8_t speed_percent) const;
@@ -245,6 +252,8 @@ class RFBridgeComponent : public Component {
   bool transmit_low24_mode_(uint32_t remote_id, uint32_t low24, uint8_t repeats, TxFrameMode mode, const char *label);
   bool transmit_full35_mode_(uint64_t full35, uint8_t repeats, TxFrameMode mode, const char *label);
   bool transmit_last_capture_(uint8_t repeats = 1);
+  bool transmit_raw_edge_capture_(const uint16_t *edges, const uint8_t *levels, uint16_t edge_count, uint8_t initial_level, uint8_t repeats, const char *label);
+  bool transmit_learned_raw_outprize_(uint8_t repeats = 1);
   bool transmit_learned_outprize_(uint8_t repeats = 8);
   uint16_t tx_build_edge_deltas_(uint64_t frame, uint8_t bits, TxFrameMode mode, bool include_preamble, uint16_t *out, uint16_t max_edges) const;
   void log_outprize_edge_compare_(uint64_t frame, uint8_t bits, TxFrameMode mode) const;

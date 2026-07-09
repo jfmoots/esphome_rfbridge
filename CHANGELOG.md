@@ -1,7 +1,7 @@
-# v1.3.20 – Manual Known Frame Test Controls
+# v1.3.21 – Raw OEM Edge Replay
 
-- Adds `set_outprize_learned_frame(full35)` so a known frame can be forced into the learned-frame slot.
-- Adds `replay_known_outprize_power_off()` for deterministic Power Off replay without depending on RX learning.
-- Adds `compare_known_outprize_power_off()` for known-frame timing diagnostics.
-- Keeps RF profile helpers from v1.3.19.
-- Keeps full RF capture timeline, learned-frame, compare, and candidate diagnostics.
+- Adds `replay_last_outprize_raw_capture()` to replay the learned OEM capture edge deltas directly.
+- Adds `replay_last_raw_capture()` alias for the most recent RF capture.
+- Stores the learned capture initial GDO0 level and per-edge levels in addition to edge durations.
+- Keeps known-frame replay, RF profiles, learned-frame diagnostics, compare diagnostics, and candidate diagnostics.
+- Leaves reconstructed packet TX behavior unchanged.
