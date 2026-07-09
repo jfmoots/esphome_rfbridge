@@ -1,3 +1,17 @@
+# v1.3.12.1 – Compile Fix for TX Frequency Trim Tests
+
+This patch release fixes the v1.3.12 compile failure caused by missing build metadata macros.
+
+Changes:
+• Defines RFBRIDGE_BUILD_DATE, RFBRIDGE_BUILD_TIME, and RFBRIDGE_GIT_REF with safe fallback values.
+• Updates firmware version reporting to 1.3.12.1.
+• Keeps all v1.3.12 frequency-trim test helpers unchanged.
+• Keeps Outprize waveform timing, CC1101 TX profile, calibration, OOK polarity, and RX restore unchanged.
+• Leaves the receiver and decoder path unchanged.
+
+Goal:
+Make the v1.3.12 frequency-trim test build compile cleanly without changing the RF experiment itself.
+
 # v1.3.12 – TX Frequency Trim Tests
 
 This release adds transmit frequency trim experiments for Outprize fan control.

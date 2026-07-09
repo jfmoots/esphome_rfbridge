@@ -1,4 +1,4 @@
-# ESPHome RF Bridge v1.3.12
+# ESPHome RF Bridge v1.3.12.1
 
 ESPHome external component for the Outprize RF Bridge using ESP32 + CC1101.
 
