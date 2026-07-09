@@ -924,6 +924,54 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
   OutprizeDecodeCandidate best{};
   uint16_t valid_candidates = 0;
 
+  // v1.3.15: keep the top candidate alignments for Power Off diagnostics.
+  // Power Off has repeatedly appeared as clipped/shifted 30/34-bit candidates,
+  // while Fan Awake usually lands as a clean 35-bit frame.  The top list lets us
+  // see every plausible alignment instead of only the final winner.
+  static constexpr uint8_t OUTPRIZE_DIAG_TOP_CANDIDATES = 16;
+  OutprizeDecodeCandidate top_candidates[OUTPRIZE_DIAG_TOP_CANDIDATES]{};
+  uint8_t top_candidate_count = 0;
+  auto add_top_candidate = [&](const OutprizeDecodeCandidate &cand) {
+    if (!cand.valid) {
+      return;
+    }
+    uint8_t pos = top_candidate_count;
+    if (top_candidate_count < OUTPRIZE_DIAG_TOP_CANDIDATES) {
+      top_candidates[top_candidate_count++] = cand;
+    } else {
+      // If the new candidate is not better than the current last entry, drop it.
+      const auto &last = top_candidates[OUTPRIZE_DIAG_TOP_CANDIDATES - 1];
+      if (cand.score < last.score || (cand.score == last.score && cand.bit_count <= last.bit_count)) {
+        return;
+      }
+      top_candidates[OUTPRIZE_DIAG_TOP_CANDIDATES - 1] = cand;
+      pos = OUTPRIZE_DIAG_TOP_CANDIDATES - 1;
+    }
+
+    // Insertion sort by score, then exact 35-bit prefix match, then bit count.
+    while (pos > 0) {
+      const auto &prev = top_candidates[pos - 1];
+      const auto &cur = top_candidates[pos];
+      const bool cur_exact = cur.bit_count == OUTPRIZE_TX_BITS && cur.remote_id == OUTPRIZE_DEFAULT_PREFIX;
+      const bool prev_exact = prev.bit_count == OUTPRIZE_TX_BITS && prev.remote_id == OUTPRIZE_DEFAULT_PREFIX;
+      bool better = false;
+      if (cur.score > prev.score) {
+        better = true;
+      } else if (cur.score == prev.score && cur_exact && !prev_exact) {
+        better = true;
+      } else if (cur.score == prev.score && cur_exact == prev_exact && cur.bit_count > prev.bit_count) {
+        better = true;
+      }
+      if (!better) {
+        break;
+      }
+      auto tmp = top_candidates[pos - 1];
+      top_candidates[pos - 1] = top_candidates[pos];
+      top_candidates[pos] = tmp;
+      pos--;
+    }
+  };
+
   // Scan every plausible pulse alignment and use the score to prefer the
   // verified 0x60xxxx packet family over a merely-longer but shifted decode.
   for (uint16_t i = 0; i + 1 < this->rx_edge_count_; i++) {
@@ -937,6 +985,7 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
     }
 
     valid_candidates++;
+    add_top_candidate(trial);
     if (!best.valid || trial.score > best.score ||
         (trial.score == best.score && trial.bit_count > best.bit_count)) {
       best = trial;
@@ -1029,6 +1078,40 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
   ESP_LOGI(TAG, "Full35: 0x%09llX", static_cast<unsigned long long>(best.full_packet));
   ESP_LOGI(TAG, "Low24: 0x%06X", best.low24);
   ESP_LOGI(TAG, "Timing counts: short=%u long=%u sync=%u", shortish, longish, syncish);
+
+  // v1.3.15 Power Off alignment diagnostics.  Print the top plausible starts,
+  // including clipped 30-34 bit decodes, so we can see whether Power Off is a
+  // real short frame or simply a frame-start synchronization failure.
+  ESP_LOGI(TAG, "===== OUTPRIZE_CANDIDATES_30_TO_35 =====");
+  uint8_t printed = 0;
+  for (uint8_t ci = 0; ci < top_candidate_count; ci++) {
+    const auto &cand = top_candidates[ci];
+    if (cand.bit_count < 30 || cand.bit_count > 35) {
+      continue;
+    }
+    char cbinary[72]{};
+    for (uint16_t bi = 0; bi < cand.bit_count && bi < sizeof(cbinary) - 1; bi++) {
+      cbinary[bi] = cand.bits[bi] ? '1' : '0';
+    }
+    const bool exact_prefix = cand.bit_count == OUTPRIZE_TX_BITS && cand.remote_id == OUTPRIZE_DEFAULT_PREFIX;
+    const bool power_family = (cand.low24 & 0xFFFFC0UL) == 0x600000UL;
+    ESP_LOGI(TAG, "Candidate[%u] start=%u stop=%u bits=%u score=%u exact_prefix=%s power_family=%s remote=%s0x%03X full=0x%09llX low24=0x%06X stream=%s",
+             printed + 1, cand.start_index, cand.stop_index, cand.bit_count, cand.score,
+             YESNO(exact_prefix), YESNO(power_family), cand.bit_count >= OUTPRIZE_TX_BITS ? "" : "? ",
+             cand.remote_id, static_cast<unsigned long long>(cand.full_packet), cand.low24, cbinary);
+    printed++;
+  }
+  if (printed == 0) {
+    ESP_LOGI(TAG, "No 30-35 bit candidates in top candidate list");
+  }
+
+  if ((best.low24 & 0xFFFFFFUL) == 0x600000UL && best.bit_count != OUTPRIZE_TX_BITS) {
+    ESP_LOGW(TAG, "POWER_OFF_DIAG: best low24 looks like Power Off but bit_count=%u, start=%u; likely clipped/misaligned frame",
+             best.bit_count, best.start_index);
+  } else if ((best.low24 & 0xFFFFFFUL) == 0x600040UL && best.bit_count == OUTPRIZE_TX_BITS) {
+    ESP_LOGI(TAG, "POWER_OFF_DIAG: clean Fan Awake frame learned; compare against Power Off candidate list above");
+  }
+
   ESP_LOGI(TAG, "====================================");
   return true;
 }
