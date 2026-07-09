@@ -1,7 +1,6 @@
-# v1.3.21 – Raw OEM Edge Replay
+# v1.3.22 – Soft ASK Profiles & Clean RF Lab Controls
 
-- Adds `replay_last_outprize_raw_capture()` to replay the learned OEM capture edge deltas directly.
-- Adds `replay_last_raw_capture()` alias for the most recent RF capture.
-- Stores the learned capture initial GDO0 level and per-edge levels in addition to edge durations.
-- Keeps known-frame replay, RF profiles, learned-frame diagnostics, compare diagnostics, and candidate diagnostics.
-- Leaves reconstructed packet TX behavior unchanged.
+- Adds send_outprize_power_off_soft_ask_profile(profile) public helper for profiles 1..4.
+- Keeps learned decoded-frame replay and learned raw-capture replay.
+- Keeps RF capture/analysis diagnostics.
+- Intended YAML replaces old accumulated one-off buttons with a small RF lab control set.

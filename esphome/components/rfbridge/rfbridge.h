@@ -74,6 +74,10 @@ class RFBridgeComponent : public Component {
   bool send_outprize_power_off_rf_mdmcfg2_33(uint8_t repeats = 8);
   bool send_outprize_power_off_profile(uint8_t profile, uint8_t repeats = 8);
 
+  // v1.3.22 soft ASK / softened-envelope experiments. These keep the
+  // known Power Off payload unchanged and vary only CC1101 TX envelope/profile settings.
+  bool send_outprize_power_off_soft_ask_profile(uint8_t profile, uint8_t repeats = 8);
+
   bool send_outprize_low24_lsb(uint32_t low24, uint8_t repeats = 8);
   bool send_outprize_low24_inverted(uint32_t low24, uint8_t repeats = 8);
   bool send_outprize_low24_lsb_inverted(uint32_t low24, uint8_t repeats = 8);

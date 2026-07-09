@@ -1329,6 +1329,27 @@ bool RFBridgeComponent::send_outprize_power_off_rf_mdmcfg2_33(uint8_t repeats) {
 }
 
 
+
+
+bool RFBridgeComponent::send_outprize_power_off_soft_ask_profile(uint8_t profile, uint8_t repeats) {
+  switch (profile) {
+    case 1:
+      // Softer baseline: lower PA and alternate front-end, non-inverted.
+      return this->transmit_power_off_with_rf_profile_("SOFT_ASK_1_PA80_FREND10", false, 0x80, 0x10, 0x30, repeats);
+    case 2:
+      // Lower PA plus alternate MDMCFG2 used as a wider/alternate ASK-style modulation profile.
+      return this->transmit_power_off_with_rf_profile_("SOFT_ASK_2_PA60_FREND10_MDMCFG33", false, 0x60, 0x10, 0x33, repeats);
+    case 3:
+      // Full PA but alternate front-end/modulation profile.
+      return this->transmit_power_off_with_rf_profile_("SOFT_ASK_3_PA_C0_FREND10_MDMCFG33", false, 0xC0, 0x10, 0x33, repeats);
+    case 4:
+      // Soft profile with inverted electrical OOK polarity as a final envelope/polarity check.
+      return this->transmit_power_off_with_rf_profile_("SOFT_ASK_4_INVERTED_PA80", true, 0x80, 0x10, 0x30, repeats);
+    default:
+      ESP_LOGW(TAG, "OUTPRIZE TX soft ASK helper: unknown profile %u; valid profiles are 1..4", profile);
+      return false;
+  }
+}
 bool RFBridgeComponent::send_outprize_power_off_profile(uint8_t profile, uint8_t repeats) {
   switch (profile) {
     case 1:
