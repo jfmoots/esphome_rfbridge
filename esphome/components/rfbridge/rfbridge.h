@@ -83,6 +83,12 @@ class RFBridgeComponent : public Component {
   bool replay_last_outprize_learned(uint8_t repeats = 8);
   void clear_last_outprize_learned();
   void compare_last_outprize_learned();
+
+  // v1.3.20: deterministic known-frame helpers so testing is never blocked
+  // by RSSI-gated capture/learning flakiness.
+  void set_outprize_learned_frame(uint64_t full35 = ((static_cast<uint64_t>(OUTPRIZE_DEFAULT_PREFIX) << 24) | 0x600000ULL));
+  bool replay_known_outprize_power_off(uint8_t repeats = 8);
+  void compare_known_outprize_power_off();
   bool send_ook_test_burst(uint16_t pulse_us = 500, uint16_t pulse_count = 240, uint8_t repeats = 8);
   bool send_ook_carrier_test(uint16_t duration_ms = 500);
 

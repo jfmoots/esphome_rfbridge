@@ -1,14 +1,7 @@
-# v1.3.19 – RF Profile API Fix
+# v1.3.20 – Manual Known Frame Test Controls
 
-This release fixes the v1.3.18 YAML/API mismatch by exposing the RF profile selector method that the test YAML uses.
-
-Changes:
-- Adds `send_outprize_power_off_profile(profile)` as a public C++ helper.
-- Maps profile 1..6 to the RF characterization helpers already present in v1.3.18.
-- Keeps the learned/proven Outprize Power Off payload unchanged.
-- Keeps v1.3.17 full RF capture timeline diagnostics.
-- Keeps learned-frame, learned-vs-TX compare, and 30–35 bit candidate diagnostics.
-- Keeps v1.3.16 OEM-header transmitter behavior unchanged.
-
-Goal:
-Allow Home Assistant/ESPHome YAML to select RF characterization profiles without calling missing methods.
+- Adds `set_outprize_learned_frame(full35)` so a known frame can be forced into the learned-frame slot.
+- Adds `replay_known_outprize_power_off()` for deterministic Power Off replay without depending on RX learning.
+- Adds `compare_known_outprize_power_off()` for known-frame timing diagnostics.
+- Keeps RF profile helpers from v1.3.19.
+- Keeps full RF capture timeline, learned-frame, compare, and candidate diagnostics.

@@ -1,5 +1,7 @@
-# ESPHome RF Bridge v1.3.19
+# ESPHome RF Bridge v1.3.20
 
-RF profile API fix for Outprize Power Off characterization.
+Outprize RF bridge diagnostics build.
 
-Use `send_outprize_power_off_profile(1..6)` from ESPHome lambda buttons to test the RF-layer profiles included in this build.
+This version adds deterministic known-frame helpers for the proven Outprize Power Off frame `0x6CF600000`, so replay and profile testing are not blocked by capture/learning flakiness.
+
+Use the YAML in the release notes for buttons that match this firmware.
