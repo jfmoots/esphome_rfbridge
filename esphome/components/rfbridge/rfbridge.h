@@ -180,12 +180,12 @@ class RFBridgeComponent : public Component {
   void finish_ook_carrier_test_();
   void tx_carrier_loop_();
 
-  static constexpr uint16_t OUTPRIZE_TX_RESET_GAP_US = 3040;
-  static constexpr uint16_t OUTPRIZE_TX_SYNC_US = 3040;
+  static constexpr uint16_t OUTPRIZE_TX_RESET_GAP_US = 2948;
+  static constexpr uint16_t OUTPRIZE_TX_SYNC_US = 281;
   static constexpr uint16_t OUTPRIZE_TX_PULSE_US = 488;
   static constexpr uint16_t OUTPRIZE_TX_ZERO_GAP_US = 488;
   static constexpr uint16_t OUTPRIZE_TX_ONE_GAP_US = 1464;
-  static constexpr uint16_t OUTPRIZE_TX_INTER_FRAME_GAP_US = 3040;
+  static constexpr uint16_t OUTPRIZE_TX_INTER_FRAME_GAP_US = 2948;
   static constexpr uint16_t OUTPRIZE_TX_BITS = 35;
   static constexpr uint32_t OUTPRIZE_DEFAULT_PREFIX = 0x6CF;
   static constexpr uint8_t CC1101_TX_PA_TEST = 0xC0;

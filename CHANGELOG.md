@@ -1,3 +1,18 @@
+# v1.3.7 – Carrier-Off Inter-Frame Fix
+
+This release continues Outprize transmit waveform reconstruction after v1.3.6 produced a visible, timing-close ESP waveform but no fan response.
+
+Changes:
+- Keeps the working CC1101 TX profile, PATABLE, calibration, and RX restore path unchanged.
+- Treats ESP LOW on GDO0 as carrier-on and ESP HIGH as carrier-off for the async OOK envelope.
+- Removes the unwanted carrier-on reset/inter-frame behavior that created repeated ~6.1 ms leader pulses in rtl_433 captures.
+- Leaves the proven 488 us / 976 us symbol timing intact.
+- Uses carrier-off spacing between repeated frames.
+- Adds a single short leading sync/delimiter pulse instead of a long per-frame carrier-on leader.
+
+Goal:
+Move the ESP Power Off capture closer to the OEM remote by eliminating the extra ~6 ms pulses while preserving the now-correct core bit timing.
+
 # Changelog
 
 ## v1.3.6 – Outprize Waveform Match Pass

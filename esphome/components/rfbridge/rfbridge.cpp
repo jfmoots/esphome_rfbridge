@@ -1189,32 +1189,26 @@ void RFBridgeComponent::tx_dump_status_(const char *stage) {
 void RFBridgeComponent::tx_send_outprize_frame_(uint32_t prefix, uint32_t low24) {
   const uint64_t frame = ((static_cast<uint64_t>(prefix & 0x7FF)) << 24) | (low24 & 0xFFFFFFULL);
 
-  // v1.3.6 waveform-match pass based on paired rtl_433 -A captures.
-  // OEM Power Off baseline was built around ~488 us half-cells, ~976 us full-cells,
-  // and ~3040 us repeat spacing. Keep CC1101 TX config unchanged; only shape
-  // the Outprize protocol waveform here.
+  // v1.3.7 waveform-match pass.
+  // rtl_433 captures showed the CC1101 async data polarity is effectively inverted
+  // for OOK envelope purposes on this module: ESP LOW is carrier-on, ESP HIGH is
+  // carrier-off.  v1.3.6 left the line LOW during reset/inter-frame spacing, which
+  // produced unwanted ~6.1 ms carrier-on leader pulses.  Keep the proven bit timing,
+  // but make all quiet spacing carrier-off.
   //
-  // Gap-width PWM:
-  //   reset/quiet low gap
-  //   high sync
-  //   each data bit: short low pulse, then high gap
-  //     0 = ~488 us high gap
-  //     1 = ~1464 us high gap
-  this->tx_write_data_(false);
-  delayMicroseconds(OUTPRIZE_TX_RESET_GAP_US);
-
-  this->tx_write_data_(true);
-  delayMicroseconds(OUTPRIZE_TX_SYNC_US);
-
+  // Outprize PWM shape used here:
+  //   carrier-on pulse  ~= 488 us  (ESP LOW)
+  //   0 off gap         ~= 488 us  (ESP HIGH)
+  //   1 off gap         ~= 1464 us (ESP HIGH)
   for (int8_t bit = OUTPRIZE_TX_BITS - 1; bit >= 0; bit--) {
     const bool one = ((frame >> bit) & 0x01ULL) != 0;
-    this->tx_write_data_(false);
+    this->tx_write_data_(false);  // carrier on
     delayMicroseconds(OUTPRIZE_TX_PULSE_US);
-    this->tx_write_data_(true);
+    this->tx_write_data_(true);   // carrier off / symbol gap
     delayMicroseconds(one ? OUTPRIZE_TX_ONE_GAP_US : OUTPRIZE_TX_ZERO_GAP_US);
   }
 
-  this->tx_write_data_(false);
+  this->tx_write_data_(true);  // leave RF envelope off between frames
 }
 
 bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint8_t repeats) {
@@ -1262,19 +1256,29 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
   this->tx_dump_status_("after SCAL");
   ESP_LOGI(TAG, "GDO0 direction: ESP output -> CC1101 async TX data input");
   this->gdo0_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->tx_write_data_(false);
+  this->tx_write_data_(true);  // carrier off while entering TX
   delayMicroseconds(2000);
   const uint8_t stx_status = this->cc1101_strobe_(cc1101::STX);
   ESP_LOGI(TAG, "CC1101 TX strobe STX status=0x%02X", stx_status);
   delayMicroseconds(1000);
   this->tx_dump_status_("after STX");
 
+  // One short leading sync/delimiter pulse.  The clean OEM Power Off capture had
+  // a single ~281 us sync pulse rather than a long carrier-on leader before every
+  // repeated frame.
+  this->tx_write_data_(true);
+  delayMicroseconds(OUTPRIZE_TX_RESET_GAP_US);
+  this->tx_write_data_(false);
+  delayMicroseconds(OUTPRIZE_TX_SYNC_US);
+  this->tx_write_data_(true);
+  delayMicroseconds(OUTPRIZE_TX_ZERO_GAP_US);
+
   for (uint8_t i = 0; i < repeats; i++) {
     this->tx_send_outprize_frame_(prefix, low24 & 0xFFFFFF);
     delayMicroseconds(OUTPRIZE_TX_INTER_FRAME_GAP_US);
   }
 
-  this->tx_write_data_(false);
+  this->tx_write_data_(true);  // carrier off before restore
   delayMicroseconds(1000);
   this->tx_log_marcstate_("before idle restore");
   this->cc1101_enter_idle_();
