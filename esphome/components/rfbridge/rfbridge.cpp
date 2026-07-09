@@ -1189,7 +1189,7 @@ void RFBridgeComponent::tx_dump_status_(const char *stage) {
 void RFBridgeComponent::tx_send_outprize_frame_(uint32_t prefix, uint32_t low24) {
   const uint64_t frame = ((static_cast<uint64_t>(prefix & 0x7FF)) << 24) | (low24 & 0xFFFFFFULL);
 
-  // v1.3.7 waveform-match pass.
+  // v1.3.8 waveform-match pass.
   // rtl_433 captures showed the CC1101 async data polarity is effectively inverted
   // for OOK envelope purposes on this module: ESP LOW is carrier-on, ESP HIGH is
   // carrier-off.  v1.3.6 left the line LOW during reset/inter-frame spacing, which
@@ -1265,7 +1265,7 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
 
   // One short leading sync/delimiter pulse.  The clean OEM Power Off capture had
   // a single ~281 us sync pulse rather than a long carrier-on leader before every
-  // repeated frame.
+  // repeated frame. v1.3.8 shortens the explicit inter-frame off gap because rtl_433 measures the final symbol off-gap plus this inter-frame delay as one continuous gap.
   this->tx_write_data_(true);
   delayMicroseconds(OUTPRIZE_TX_RESET_GAP_US);
   this->tx_write_data_(false);

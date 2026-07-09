@@ -185,7 +185,7 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t OUTPRIZE_TX_PULSE_US = 488;
   static constexpr uint16_t OUTPRIZE_TX_ZERO_GAP_US = 488;
   static constexpr uint16_t OUTPRIZE_TX_ONE_GAP_US = 1464;
-  static constexpr uint16_t OUTPRIZE_TX_INTER_FRAME_GAP_US = 2948;
+  static constexpr uint16_t OUTPRIZE_TX_INTER_FRAME_GAP_US = 2460;
   static constexpr uint16_t OUTPRIZE_TX_BITS = 35;
   static constexpr uint32_t OUTPRIZE_DEFAULT_PREFIX = 0x6CF;
   static constexpr uint8_t CC1101_TX_PA_TEST = 0xC0;

@@ -1,3 +1,18 @@
+# Changelog
+
+## v1.3.8 – Inter-Frame Gap Compensation
+
+This release makes a surgical waveform timing adjustment after v1.3.7 testing. The v1.3.7 ESP waveform matched the OEM remote closely in total pulse count, total burst duration, and 488/976 us core timing, but rtl_433 still measured the ESP inter-frame gaps at about 3420 us instead of the OEM remote's roughly 2950 us gaps.
+
+Changes:
+- Keeps the working CC1101 TX profile, PATABLE, calibration, and RX restore path unchanged.
+- Keeps the v1.3.7 OOK polarity fix unchanged.
+- Keeps the 488 us / 976 us symbol timing unchanged.
+- Shortens the explicit inter-frame carrier-off delay from 2948 us to 2460 us so that the measured continuous off period, including the final symbol gap, lands near the OEM 2950 us gap.
+- Leaves the receiver and decoder path unchanged.
+
+Goal: move the ESP Power Off capture closer to the clean OEM Power Off capture by correcting the measured inter-frame gap without disturbing the now-correct core waveform timing.
+
 # v1.3.7 – Carrier-Off Inter-Frame Fix
 
 This release continues Outprize transmit waveform reconstruction after v1.3.6 produced a visible, timing-close ESP waveform but no fan response.

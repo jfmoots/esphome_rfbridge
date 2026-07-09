@@ -1,6 +1,10 @@
+# esphome_rfbridge v1.3.8
+
+Outprize RF Bridge ESPHome external component. v1.3.8 is a targeted transmit waveform update that keeps the proven CC1101 TX configuration and v1.3.7 polarity fix, then compensates the inter-frame carrier-off delay so rtl_433 should measure gaps closer to the OEM remote baseline.
+
 # ESPHome RF Bridge
 
-## v1.3.7 - Full CC1101 TX Profile
+## v1.3.8 - Full CC1101 TX Profile
 
 This build makes the CC1101 async transmit model explicit. During receive, GDO0 is the CC1101 async data output and the ESP reads it. During transmit, the ESP temporarily switches the same GPIO to output and drives GDO0 as the CC1101 async TX data/envelope input. The 500 ms carrier test forces GDO0 HIGH while the CC1101 is in TX, then restores GDO0 to input and returns the radio to RX.
 
