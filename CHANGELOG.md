@@ -1,15 +1,12 @@
-# Changelog
+# v1.3.10 – Implemented Power Off Frame Test Helpers
 
-## v1.3.9 – Frame Content Diagnostics
-
-This release keeps the v1.3.8 waveform timing unchanged and adds packet-content diagnostics/test modes.
+This release fixes the v1.3.9 test-helper mismatch.
 
 Changes:
-- Logs the exact 35-bit transmit stream before each Outprize transmission.
-- Adds alternate Power Off test-call helpers for LSB order, inverted bits, and LSB inverted bits.
-- Adds raw full35 transmit helpers for direct frame replay experiments.
-- Keeps CC1101 TX profile, PATABLE, SCAL calibration, OOK polarity, and RX restore unchanged.
+- Adds the public C++ helper methods used by the YAML protocol-test buttons.
+- Adds Power Off LSB, inverted MSB, inverted LSB, and raw OEM Power Off helpers.
+- Keeps the v1.3.8/v1.3.9 RF timing, CC1101 TX profile, calibration, OOK polarity, and RX restore path unchanged.
 - Leaves the receiver and decoder path unchanged.
 
 Goal:
-Determine whether the remaining fan-control failure is caused by bit order, inversion, or full-frame construction rather than RF timing.
+Allow protocol-content testing from Home Assistant without asking users to call functions that are not present in the component.

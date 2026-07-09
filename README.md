@@ -1,48 +1,35 @@
-# esphome_rfbridge v1.3.9
+# ESPHome RF Bridge v1.3.10
 
-Outprize RF Bridge ESPHome external component.
+ESPHome external component for the Outprize RF bridge project using ESP32 + CC1101.
 
-v1.3.9 keeps the proven v1.3.8 RF timing/envelope and adds transmit-content diagnostics plus alternate packet-content test modes. The goal is to stop chasing pulse timing and verify whether the remaining fan-control failure is caused by bit order, inversion, or full-frame construction.
+## v1.3.10 focus
 
-## Highlights
+v1.3.10 implements the Power Off frame test helper methods that are intended to be called from ESPHome template buttons during protocol reconstruction.
 
-- Receiver/decoder path unchanged.
-- CC1101 TX profile, calibration, PATABLE, and RX restore path unchanged.
-- v1.3.8 waveform timing retained.
-- Logs the exact 35-bit frame stream before transmit.
-- Adds callable test methods for MSB, LSB, inverted MSB, inverted LSB, and raw full35 transmission.
+The RF timing and CC1101 TX setup are unchanged from the recent waveform-matching builds.
 
-## Example lambda test buttons
+## Test helpers available from lambda
 
-```yaml
-button:
-  - platform: template
-    name: "Outprize TX Power Off MSB Normal"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize_low24(0x600000);
-
-  - platform: template
-    name: "Outprize TX Power Off LSB Normal"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize_low24_lsb(0x600000);
-
-  - platform: template
-    name: "Outprize TX Power Off MSB Inverted"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize_low24_inverted(0x600000);
-
-  - platform: template
-    name: "Outprize TX Power Off LSB Inverted"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize_low24_lsb_inverted(0x600000);
-
-  - platform: template
-    name: "Outprize TX Raw Full35 Power Off"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize_raw_full35(0x6CF600000ULL);
+```cpp
+id(rf_bridge).send_outprize_low24(0x600000);
+id(rf_bridge).send_outprize_power_off();
+id(rf_bridge).send_outprize_power_off_lsb();
+id(rf_bridge).send_outprize_power_off_inv();
+id(rf_bridge).send_outprize_power_off_inv_lsb();
+id(rf_bridge).send_outprize_raw_oem_power_off();
+id(rf_bridge).send_outprize_raw_full35(0x6CF600000ULL);
 ```
+
+## Hardware
+
+Known-good wiring for this project:
+
+- CS -> GPIO5
+- SCK -> GPIO18
+- MOSI -> GPIO23
+- MISO -> GPIO19
+- GDO0 -> GPIO4
+- 3.3V
+- GND
+
+GDO2 is not used.

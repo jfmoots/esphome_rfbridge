@@ -1087,6 +1087,31 @@ bool RFBridgeComponent::send_outprize_low24(uint32_t remote_id, uint32_t low24, 
   return this->transmit_low24_(remote_id, low24, repeats);
 }
 
+bool RFBridgeComponent::send_outprize_power_off_lsb(uint8_t repeats) {
+  ESP_LOGI(TAG, "OUTPRIZE TX test helper: Power Off LSB_NORMAL");
+  return this->send_outprize_low24_lsb(0x600000, repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_inv(uint8_t repeats) {
+  ESP_LOGI(TAG, "OUTPRIZE TX test helper: Power Off MSB_INVERTED");
+  return this->send_outprize_low24_inverted(0x600000, repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_inv_lsb(uint8_t repeats) {
+  ESP_LOGI(TAG, "OUTPRIZE TX test helper: Power Off LSB_INVERTED");
+  return this->send_outprize_low24_lsb_inverted(0x600000, repeats);
+}
+
+bool RFBridgeComponent::send_outprize_raw_oem_power_off(uint8_t repeats) {
+  // Current best-known OEM Power Off frame from the Outprize decoder:
+  // 11-bit prefix 0x6CF + 24-bit low command 0x600000. This helper is
+  // intentionally explicit so the YAML test button calls a method that exists.
+  constexpr uint64_t OEM_POWER_OFF_FULL35 = ((static_cast<uint64_t>(OUTPRIZE_DEFAULT_PREFIX) << 24) | 0x600000ULL);
+  ESP_LOGI(TAG, "OUTPRIZE TX test helper: Raw OEM Power Off full35=0x%09llX",
+           static_cast<unsigned long long>(OEM_POWER_OFF_FULL35));
+  return this->send_outprize_raw_full35(OEM_POWER_OFF_FULL35, repeats);
+}
+
 bool RFBridgeComponent::send_outprize_low24_lsb(uint32_t low24, uint8_t repeats) {
   return this->transmit_low24_mode_(this->outprize_remote_id_, low24, repeats, TxFrameMode::LSB_NORMAL, "LOW24_LSB_NORMAL");
 }

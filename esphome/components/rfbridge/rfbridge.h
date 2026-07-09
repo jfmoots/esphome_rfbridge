@@ -48,6 +48,14 @@ class RFBridgeComponent : public Component {
   bool send_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats);
   bool send_outprize_power_off(uint8_t repeats = 8) { return this->send_outprize_low24(0x600000, repeats); }
   bool send_outprize_fan_off(uint8_t repeats = 8) { return this->send_outprize_low24(0x600040, repeats); }
+
+  // Reverse-engineering test helpers. These are intentionally public so they
+  // can be called from ESPHome lambda buttons during protocol reconstruction.
+  bool send_outprize_power_off_lsb(uint8_t repeats = 8);
+  bool send_outprize_power_off_inv(uint8_t repeats = 8);
+  bool send_outprize_power_off_inv_lsb(uint8_t repeats = 8);
+  bool send_outprize_raw_oem_power_off(uint8_t repeats = 8);
+
   bool send_outprize_low24_lsb(uint32_t low24, uint8_t repeats = 8);
   bool send_outprize_low24_inverted(uint32_t low24, uint8_t repeats = 8);
   bool send_outprize_low24_lsb_inverted(uint32_t low24, uint8_t repeats = 8);
