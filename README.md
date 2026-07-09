@@ -1,35 +1,32 @@
-# ESPHome RF Bridge v1.3.10
+# ESPHome RF Bridge v1.3.11
 
-ESPHome external component for the Outprize RF bridge project using ESP32 + CC1101.
+ESPHome external component for the Outprize RF Bridge using ESP32 + CC1101.
 
-## v1.3.10 focus
+v1.3.11 focuses on OEM capture learning and replay. After an OEM Outprize remote packet is captured and decoded, the component stores the recovered 35-bit frame and can replay that learned frame from a Home Assistant button.
 
-v1.3.10 implements the Power Off frame test helper methods that are intended to be called from ESPHome template buttons during protocol reconstruction.
+## New v1.3.11 test helpers
 
-The RF timing and CC1101 TX setup are unchanged from the recent waveform-matching builds.
+```yaml
+button:
+  - platform: template
+    name: "Outprize Replay Last Learned OEM Frame"
+    on_press:
+      - lambda: |-
+          id(rf_bridge).replay_last_outprize_learned();
 
-## Test helpers available from lambda
-
-```cpp
-id(rf_bridge).send_outprize_low24(0x600000);
-id(rf_bridge).send_outprize_power_off();
-id(rf_bridge).send_outprize_power_off_lsb();
-id(rf_bridge).send_outprize_power_off_inv();
-id(rf_bridge).send_outprize_power_off_inv_lsb();
-id(rf_bridge).send_outprize_raw_oem_power_off();
-id(rf_bridge).send_outprize_raw_full35(0x6CF600000ULL);
+  - platform: template
+    name: "Outprize Clear Learned OEM Frame"
+    on_press:
+      - lambda: |-
+          id(rf_bridge).clear_last_outprize_learned();
 ```
 
-## Hardware
+## Test flow
 
-Known-good wiring for this project:
+1. Flash v1.3.11 with `diagnostic_logging: true`.
+2. Open ESPHome logs.
+3. Press the OEM Outprize remote button once, preferably Power Off.
+4. Wait for a log line beginning with `OUTPRIZE_LEARNED`.
+5. Press `Outprize Replay Last Learned OEM Frame` near the fan.
 
-- CS -> GPIO5
-- SCK -> GPIO18
-- MOSI -> GPIO23
-- MISO -> GPIO19
-- GDO0 -> GPIO4
-- 3.3V
-- GND
-
-GDO2 is not used.
+If no `OUTPRIZE_LEARNED` line appears, the ESP did not decode a clean enough OEM frame yet. Try pressing the OEM remote again from a different distance.

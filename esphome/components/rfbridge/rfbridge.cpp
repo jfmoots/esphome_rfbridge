@@ -84,6 +84,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window verified Outprize decoder");
   ESP_LOGCONFIG(TAG, "  TX Mode: Experimental CC1101 async OOK transmitter (ESP drives GDO0 TX data)");
   ESP_LOGCONFIG(TAG, "  Diagnostic Logging: %s", YESNO(this->diagnostic_logging_));
+  ESP_LOGCONFIG(TAG, "  Learned Outprize Frame: %s", YESNO(this->outprize_learned_valid_));
   ESP_LOGCONFIG(TAG, "  Outprize Remote ID / 11-bit prefix: 0x%03X", this->outprize_remote_id_ & 0x7FF);
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
   ESP_LOGCONFIG(TAG, "  RX Capture Window: %u us", RX_CAPTURE_WINDOW_US);
@@ -888,10 +889,10 @@ uint16_t RFBridgeComponent::rx_score_outprize_candidate_(OutprizeDecodeCandidate
 bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
   this->rx_last_outprize_like_ = false;
 
-  if (this->rx_edge_count_ < OUTPRIZE_MIN_EDGES || this->rx_edge_count_ > OUTPRIZE_MAX_EDGES) {
+  if (this->rx_edge_count_ < OUTPRIZE_MIN_EDGES) {
     if (this->diagnostic_logging_) {
-      ESP_LOGD(TAG, "Capture #%u Outprize decoder: skipped (edge count %u outside %u-%u)",
-               capture_no, this->rx_edge_count_, OUTPRIZE_MIN_EDGES, OUTPRIZE_MAX_EDGES);
+      ESP_LOGD(TAG, "Capture #%u Outprize learner: skipped (edge count %u below %u)",
+               capture_no, this->rx_edge_count_, OUTPRIZE_MIN_EDGES);
     }
     return false;
   }
@@ -910,9 +911,9 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
     }
   }
 
-  if (shortish < 18 || longish < 6) {
+  if (shortish < 18 || longish < 4) {
     if (this->diagnostic_logging_) {
-      ESP_LOGD(TAG, "Capture #%u Outprize decoder: skipped (short=%u long=%u sync=%u)",
+      ESP_LOGD(TAG, "Capture #%u Outprize learner: skipped (short=%u long=%u sync=%u)",
                capture_no, shortish, longish, syncish);
     }
     return false;
@@ -980,6 +981,22 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
     confidence = "good";
   } else if (best.score >= 1050) {
     confidence = "fair";
+  }
+
+  if (best.valid && best.bit_count >= OUTPRIZE_TX_BITS) {
+    this->outprize_learned_valid_ = true;
+    this->outprize_learned_full35_ = best.full_packet & 0x7FFFFFFFFULL;
+    this->outprize_learned_low24_ = best.low24 & 0xFFFFFFUL;
+    this->outprize_learned_remote_id_ = best.remote_id & 0x7FF;
+    this->outprize_learned_bits_ = best.bit_count;
+    this->outprize_learned_capture_no_ = capture_no;
+    this->outprize_learned_score_ = best.score;
+    strncpy(this->outprize_learned_binary_, binary, sizeof(this->outprize_learned_binary_) - 1);
+    this->outprize_learned_binary_[sizeof(this->outprize_learned_binary_) - 1] = '\0';
+    ESP_LOGI(TAG, "OUTPRIZE_LEARNED capture=%u full35=0x%09llX remote=0x%03X low24=0x%06X bits=%u score=%u stream=%s",
+             capture_no, static_cast<unsigned long long>(this->outprize_learned_full35_),
+             this->outprize_learned_remote_id_, this->outprize_learned_low24_,
+             this->outprize_learned_bits_, this->outprize_learned_score_, this->outprize_learned_binary_);
   }
 
   if (!this->diagnostic_logging_) {
@@ -1533,6 +1550,34 @@ bool RFBridgeComponent::transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pul
 
 bool RFBridgeComponent::replay_last_capture(uint8_t repeats) {
   return this->transmit_last_capture_(repeats);
+}
+
+bool RFBridgeComponent::replay_last_outprize_learned(uint8_t repeats) {
+  return this->transmit_learned_outprize_(repeats);
+}
+
+void RFBridgeComponent::clear_last_outprize_learned() {
+  this->outprize_learned_valid_ = false;
+  this->outprize_learned_full35_ = 0;
+  this->outprize_learned_low24_ = 0;
+  this->outprize_learned_remote_id_ = 0;
+  this->outprize_learned_bits_ = 0;
+  this->outprize_learned_capture_no_ = 0;
+  this->outprize_learned_score_ = 0;
+  this->outprize_learned_binary_[0] = '\0';
+  ESP_LOGI(TAG, "OUTPRIZE_LEARNED cleared");
+}
+
+bool RFBridgeComponent::transmit_learned_outprize_(uint8_t repeats) {
+  if (!this->outprize_learned_valid_) {
+    ESP_LOGW(TAG, "OUTPRIZE learned replay unavailable; press the OEM remote first and wait for OUTPRIZE_LEARNED in the log");
+    return false;
+  }
+  ESP_LOGI(TAG, "OUTPRIZE learned replay start capture=%u full35=0x%09llX remote=0x%03X low24=0x%06X bits=%u score=%u stream=%s",
+           this->outprize_learned_capture_no_, static_cast<unsigned long long>(this->outprize_learned_full35_),
+           this->outprize_learned_remote_id_, this->outprize_learned_low24_,
+           this->outprize_learned_bits_, this->outprize_learned_score_, this->outprize_learned_binary_);
+  return this->transmit_full35_mode_(this->outprize_learned_full35_, repeats, TxFrameMode::MSB_NORMAL, "LEARNED_FULL35_MSB_NORMAL");
 }
 
 bool RFBridgeComponent::transmit_last_capture_(uint8_t repeats) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
@@ -62,6 +63,8 @@ class RFBridgeComponent : public Component {
   bool send_outprize_raw_full35(uint64_t full35, uint8_t repeats = 8);
   bool send_outprize_raw_full35_lsb(uint64_t full35, uint8_t repeats = 8);
   bool replay_last_capture(uint8_t repeats = 1);
+  bool replay_last_outprize_learned(uint8_t repeats = 8);
+  void clear_last_outprize_learned();
   bool send_ook_test_burst(uint16_t pulse_us = 500, uint16_t pulse_count = 240, uint8_t repeats = 8);
   bool send_ook_carrier_test(uint16_t duration_ms = 500);
 
@@ -142,7 +145,9 @@ class RFBridgeComponent : public Component {
   static constexpr uint16_t RX_ANALYSIS_BIN_COUNT = 40;
   static constexpr uint16_t RX_ANALYSIS_MAX_PRINTED_SYMBOLS = 96;
   static constexpr uint16_t OUTPRIZE_MIN_EDGES = 60;
-  static constexpr uint16_t OUTPRIZE_MAX_EDGES = 95;
+  // Keep the old single-frame decoder, but allow full RSSI-window captures
+  // containing multiple repeats to be scanned for a valid 35-bit frame.
+  static constexpr uint16_t OUTPRIZE_MAX_EDGES = RX_MAX_EDGES;
   static constexpr uint16_t OUTPRIZE_SHORT_US_MIN = 350;
   static constexpr uint16_t OUTPRIZE_SHORT_US_MAX = 750;
   static constexpr uint16_t OUTPRIZE_LONG_US_MIN = 1150;
@@ -179,6 +184,15 @@ class RFBridgeComponent : public Component {
   uint16_t rx_edges_[RX_MAX_EDGES]{};
   uint8_t rx_levels_[RX_MAX_EDGES]{};
 
+  bool outprize_learned_valid_{false};
+  uint64_t outprize_learned_full35_{0};
+  uint32_t outprize_learned_low24_{0};
+  uint16_t outprize_learned_remote_id_{0};
+  uint16_t outprize_learned_bits_{0};
+  uint32_t outprize_learned_capture_no_{0};
+  uint16_t outprize_learned_score_{0};
+  char outprize_learned_binary_[72]{};
+
   uint32_t outprize_speed_base_(uint8_t speed_percent) const;
   void cc1101_configure_ook_async_tx_();
   bool cc1101_calibrate_for_tx_();
@@ -193,6 +207,7 @@ class RFBridgeComponent : public Component {
   bool transmit_low24_mode_(uint32_t remote_id, uint32_t low24, uint8_t repeats, TxFrameMode mode, const char *label);
   bool transmit_full35_mode_(uint64_t full35, uint8_t repeats, TxFrameMode mode, const char *label);
   bool transmit_last_capture_(uint8_t repeats = 1);
+  bool transmit_learned_outprize_(uint8_t repeats = 8);
   bool transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pulse_count, uint8_t repeats);
   bool start_ook_carrier_test_(uint16_t duration_ms);
   void finish_ook_carrier_test_();
