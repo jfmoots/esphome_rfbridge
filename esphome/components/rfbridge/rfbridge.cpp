@@ -924,7 +924,7 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
   OutprizeDecodeCandidate best{};
   uint16_t valid_candidates = 0;
 
-  // v1.3.15: keep the top candidate alignments for Power Off diagnostics.
+  // v1.3.16: keep the top candidate alignments for Power Off diagnostics.
   // Power Off has repeatedly appeared as clipped/shifted 30/34-bit candidates,
   // while Fan Awake usually lands as a clean 35-bit frame.  The top list lets us
   // see every plausible alignment instead of only the final winner.
@@ -1079,7 +1079,7 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
   ESP_LOGI(TAG, "Low24: 0x%06X", best.low24);
   ESP_LOGI(TAG, "Timing counts: short=%u long=%u sync=%u", shortish, longish, syncish);
 
-  // v1.3.15 Power Off alignment diagnostics.  Print the top plausible starts,
+  // v1.3.16 Power Off alignment diagnostics.  Print the top plausible starts,
   // including clipped 30-34 bit decodes, so we can see whether Power Off is a
   // real short frame or simply a frame-start synchronization failure.
   ESP_LOGI(TAG, "===== OUTPRIZE_CANDIDATES_30_TO_35 =====");
@@ -1457,15 +1457,16 @@ bool RFBridgeComponent::transmit_full35_mode_(uint64_t full35, uint8_t repeats, 
   }
   const uint8_t zeros = OUTPRIZE_TX_BITS - ones;
   this->tx_log_frame_bits_(full_frame, OUTPRIZE_TX_BITS, mode, label);
-  const uint32_t single_frame_duration_us = OUTPRIZE_TX_RESET_GAP_US + OUTPRIZE_TX_SYNC_US +
+  const uint32_t frame_data_duration_us =
       (static_cast<uint32_t>(zeros) * (OUTPRIZE_TX_PULSE_US + OUTPRIZE_TX_ZERO_GAP_US)) +
       (static_cast<uint32_t>(ones) * (OUTPRIZE_TX_PULSE_US + OUTPRIZE_TX_ONE_GAP_US));
-  const uint32_t burst_duration_us = (single_frame_duration_us * repeats) +
+  const uint32_t burst_duration_us = OUTPRIZE_TX_HEADER_ON_US + OUTPRIZE_TX_HEADER_OFF_US +
+      (frame_data_duration_us * repeats) +
       (static_cast<uint32_t>(OUTPRIZE_TX_INTER_FRAME_GAP_US) * repeats);
-  ESP_LOGI(TAG, "OUTPRIZE TX start label=%s prefix=0x%03X low24=0x%06X full35=0x%09llX repeats=%u bits=%u ones=%u zeros=%u timing[pulse=%u zero=%u one=%u sync=%u reset=%u gap=%u] est_duration=%u us",
+  ESP_LOGI(TAG, "OUTPRIZE TX start label=%s prefix=0x%03X low24=0x%06X full35=0x%09llX repeats=%u bits=%u ones=%u zeros=%u timing[pulse=%u zero=%u one=%u header_on=%u header_off=%u gap=%u] est_duration=%u us",
            label, prefix, low24 & 0xFFFFFF, static_cast<unsigned long long>(full_frame), repeats, OUTPRIZE_TX_BITS, ones, zeros,
            OUTPRIZE_TX_PULSE_US, OUTPRIZE_TX_ZERO_GAP_US, OUTPRIZE_TX_ONE_GAP_US,
-           OUTPRIZE_TX_SYNC_US, OUTPRIZE_TX_RESET_GAP_US, OUTPRIZE_TX_INTER_FRAME_GAP_US,
+           OUTPRIZE_TX_HEADER_ON_US, OUTPRIZE_TX_HEADER_OFF_US, OUTPRIZE_TX_INTER_FRAME_GAP_US,
            burst_duration_us);
 
   // Pause RX while transmitting.  GDO0 normally acts as the CC1101 async data
@@ -1488,15 +1489,14 @@ bool RFBridgeComponent::transmit_full35_mode_(uint64_t full35, uint8_t repeats, 
   delayMicroseconds(1000);
   this->tx_dump_status_("after STX");
 
-  // One short leading sync/delimiter pulse.  The clean OEM Power Off capture had
-  // a single ~281 us sync pulse rather than a long carrier-on leader before every
-  // repeated frame. v1.3.8 shortens the explicit inter-frame off gap because rtl_433 measures the final symbol off-gap plus this inter-frame delay as one continuous gap.
-  this->tx_write_data_(true);
-  delayMicroseconds(OUTPRIZE_TX_RESET_GAP_US);
-  this->tx_write_data_(false);
-  delayMicroseconds(OUTPRIZE_TX_SYNC_US);
-  this->tx_write_data_(true);
-  delayMicroseconds(OUTPRIZE_TX_ZERO_GAP_US);
+  // v1.3.16: match the learned OEM frame header instead of using the earlier
+  // synthetic reset/sync delimiter.  The learned Power Off capture starts with
+  // two long edge intervals before the PWM payload: about 4.6 ms carrier-on,
+  // then about 4.5 ms carrier-off, then the first data pulse.
+  this->tx_write_data_(false);  // carrier on / OEM header lead-in
+  delayMicroseconds(OUTPRIZE_TX_HEADER_ON_US);
+  this->tx_write_data_(true);   // carrier off / OEM header space
+  delayMicroseconds(OUTPRIZE_TX_HEADER_OFF_US);
 
   for (uint8_t i = 0; i < repeats; i++) {
     this->tx_send_frame_bits_(full_frame, OUTPRIZE_TX_BITS, mode);
@@ -1531,9 +1531,8 @@ uint16_t RFBridgeComponent::tx_build_edge_deltas_(uint64_t frame, uint8_t bits, 
   };
 
   if (include_preamble) {
-    add(OUTPRIZE_TX_RESET_GAP_US);
-    add(OUTPRIZE_TX_SYNC_US);
-    add(OUTPRIZE_TX_ZERO_GAP_US);
+    add(OUTPRIZE_TX_HEADER_ON_US);
+    add(OUTPRIZE_TX_HEADER_OFF_US);
   }
 
   for (uint8_t i = 0; i < bits; i++) {
@@ -1582,9 +1581,9 @@ void RFBridgeComponent::log_outprize_edge_compare_(uint64_t frame, uint8_t bits,
            this->outprize_learned_bits_, this->outprize_learned_binary_);
   ESP_LOGI(TAG, "OEM edges: total=%u data_start=%u data_stop=%u data_count=%u",
            this->outprize_learned_edge_count_, start, stop, oem_data_count);
-  ESP_LOGI(TAG, "TX simulated: data_count=%u full_with_preamble_count=%u timing[pulse=%u zero_gap=%u one_gap=%u sync=%u reset=%u inter_gap=%u]",
+  ESP_LOGI(TAG, "TX simulated: data_count=%u full_with_header_count=%u timing[pulse=%u zero_gap=%u one_gap=%u header_on=%u header_off=%u inter_gap=%u]",
            tx_data_count, tx_full_count, OUTPRIZE_TX_PULSE_US, OUTPRIZE_TX_ZERO_GAP_US, OUTPRIZE_TX_ONE_GAP_US,
-           OUTPRIZE_TX_SYNC_US, OUTPRIZE_TX_RESET_GAP_US, OUTPRIZE_TX_INTER_FRAME_GAP_US);
+           OUTPRIZE_TX_HEADER_ON_US, OUTPRIZE_TX_HEADER_OFF_US, OUTPRIZE_TX_INTER_FRAME_GAP_US);
   ESP_LOGI(TAG, "Data comparison: compared=%u avg_abs_error=%u us max_abs_error=%u us over_150us=%u",
            cmp, cmp == 0 ? 0 : static_cast<unsigned>(abs_sum / cmp), max_abs, over_150);
 
@@ -1609,7 +1608,7 @@ void RFBridgeComponent::log_outprize_edge_compare_(uint64_t frame, uint8_t bits,
     p += snprintf(pre + p, sizeof(pre) - p, " %u", this->outprize_learned_edges_[i]);
   }
   ESP_LOGI(TAG, "%s", pre);
-  ESP_LOGI(TAG, "TX with preamble first edges: %u %u %u %u %u %u %u %u",
+  ESP_LOGI(TAG, "TX with OEM header first edges: %u %u %u %u %u %u %u %u",
            tx_full_count > 0 ? tx_full[0] : 0, tx_full_count > 1 ? tx_full[1] : 0,
            tx_full_count > 2 ? tx_full[2] : 0, tx_full_count > 3 ? tx_full[3] : 0,
            tx_full_count > 4 ? tx_full[4] : 0, tx_full_count > 5 ? tx_full[5] : 0,

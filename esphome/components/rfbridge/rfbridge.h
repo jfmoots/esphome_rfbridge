@@ -234,8 +234,11 @@ class RFBridgeComponent : public Component {
   void finish_ook_carrier_test_();
   void tx_carrier_loop_();
 
-  static constexpr uint16_t OUTPRIZE_TX_RESET_GAP_US = 2948;
-  static constexpr uint16_t OUTPRIZE_TX_SYNC_US = 281;
+  static constexpr uint16_t OUTPRIZE_TX_HEADER_ON_US = 4596;
+  static constexpr uint16_t OUTPRIZE_TX_HEADER_OFF_US = 4513;
+  // Legacy synthetic header constants retained for compatibility with older diagnostics.
+  static constexpr uint16_t OUTPRIZE_TX_RESET_GAP_US = OUTPRIZE_TX_HEADER_ON_US;
+  static constexpr uint16_t OUTPRIZE_TX_SYNC_US = OUTPRIZE_TX_HEADER_OFF_US;
   static constexpr uint16_t OUTPRIZE_TX_PULSE_US = 488;
   static constexpr uint16_t OUTPRIZE_TX_ZERO_GAP_US = 488;
   static constexpr uint16_t OUTPRIZE_TX_ONE_GAP_US = 1464;

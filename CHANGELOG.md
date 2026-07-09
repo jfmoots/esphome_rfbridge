@@ -1,11 +1,8 @@
-# v1.3.15 – Power Off Alignment Diagnostics
+# v1.3.16 – OEM Header Timing Match
 
-This release focuses on diagnosing why OEM Power Off frames do not learn cleanly while Fan Awake frames do.
-
-Changes:
-- Keeps transmitter behavior unchanged.
-- Keeps CC1101 TX/RX configuration unchanged.
-- Adds top-candidate alignment logging for 30–35 bit Outprize-like decodes.
-- Logs candidate start/stop index, bit count, score, prefix, low24, full frame, and bitstream.
-- Flags likely clipped/misaligned Power Off candidates.
-- Leaves YAML API unchanged.
+- Keeps learned-frame capture diagnostics.
+- Keeps learned-vs-TX edge comparison diagnostics.
+- Keeps 30–35 bit candidate alignment diagnostics.
+- Replaces the previous synthetic TX startup header with OEM-style timing.
+- Uses a ~4596 us carrier-on lead-in followed by a ~4513 us carrier-off header gap before the PWM payload.
+- Keeps payload, bit order, CC1101 TX/RX configuration, frequency helpers, and RX restore behavior unchanged.
