@@ -1,3 +1,3 @@
-# ESPHome RF Bridge v1.3.22
+# ESPHome RF Bridge
 
-Soft ASK profile experiments plus cleaned RF lab controls for Outprize testing.
+v1.3.23 adds explicit sequence learning and Home Assistant status helpers for RF troubleshooting.

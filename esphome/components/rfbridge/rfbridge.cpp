@@ -62,6 +62,11 @@ void RFBridgeComponent::loop() {
     this->tx_carrier_loop_();
     return;
   }
+  if (this->sequence_active_ && static_cast<int32_t>(millis() - this->sequence_until_ms_) > 0) {
+    this->sequence_active_ = false;
+    snprintf(this->sequence_last_summary_, sizeof(this->sequence_last_summary_), "%u frame(s) captured", this->sequence_count_);
+    ESP_LOGI(TAG, "RF_SEQUENCE_LEARN complete frames=%u", this->sequence_count_);
+  }
   this->rx_poll_();
 }
 
@@ -373,7 +378,8 @@ void RFBridgeComponent::rx_poll_() {
     return;
   }
 
-  if ((now_ms - this->rx_last_capture_ms_) < RX_CAPTURE_COOLDOWN_MS) {
+  const uint32_t cooldown_ms = this->sequence_active_ ? 25 : RX_CAPTURE_COOLDOWN_MS;
+  if ((now_ms - this->rx_last_capture_ms_) < cooldown_ms) {
     ESP_LOGV(TAG, "RSSI %d dBm crossed threshold during cooldown", rssi);
     return;
   }
@@ -455,6 +461,7 @@ void RFBridgeComponent::rx_finish_capture_(uint32_t start_us, uint32_t end_us, i
 
   this->rx_last_outprize_like_ = false;
   const bool decoded = this->rx_log_outprize_decode_(this->rx_packets_seen_);
+  this->sequence_store_current_capture_(this->rx_packets_seen_, decoded);
 
   if (this->diagnostic_logging_) {
     this->rx_log_full_capture_timeline_(this->rx_packets_seen_);
@@ -2038,6 +2045,132 @@ bool RFBridgeComponent::transmit_learned_outprize_(uint8_t repeats) {
            this->outprize_learned_remote_id_, this->outprize_learned_low24_,
            this->outprize_learned_bits_, this->outprize_learned_score_, this->outprize_learned_binary_);
   return this->transmit_full35_mode_(this->outprize_learned_full35_, repeats, TxFrameMode::MSB_NORMAL, "LEARNED_FULL35_MSB_NORMAL");
+}
+
+
+std::string RFBridgeComponent::get_last_learned_summary() const {
+  if (!this->outprize_learned_valid_) {
+    return std::string("No command learned");
+  }
+  const char *name = "Unknown";
+  switch (this->outprize_learned_low24_ & 0xFFFFFFUL) {
+    case 0x600000: name = "Power Off"; break;
+    case 0x600040: name = "Fan Awake"; break;
+    case 0x600160: name = "Vent Close"; break;
+    case 0x600350: name = "Vent Open"; break;
+    case 0x600154: name = "Rain Sensor"; break;
+    case 0x600140: name = "40% Out"; break;
+    case 0x600240: name = "10% Out"; break;
+    case 0x600440: name = "20% Out"; break;
+    case 0x600640: name = "30% Out"; break;
+    case 0x600340: name = "50% Out"; break;
+    case 0x600540: name = "60% Out"; break;
+    case 0x600740: name = "70% Out"; break;
+    case 0x600170: name = "80% Out"; break;
+    case 0x600178: name = "90% Out"; break;
+    case 0x60017C: name = "100% Out"; break;
+  }
+  char buf[160];
+  snprintf(buf, sizeof(buf), "%s low24=0x%06X remote=0x%03X bits=%u edges=%u cap=%u",
+           name, this->outprize_learned_low24_, this->outprize_learned_remote_id_,
+           this->outprize_learned_bits_, this->outprize_learned_edge_count_, this->outprize_learned_capture_no_);
+  return std::string(buf);
+}
+
+std::string RFBridgeComponent::get_sequence_summary() const {
+  if (this->sequence_count_ == 0) {
+    return this->sequence_active_ ? std::string("Learning sequence...") : std::string("No sequence captured");
+  }
+  return std::string(this->sequence_last_summary_);
+}
+
+void RFBridgeComponent::start_rf_sequence_capture(uint16_t duration_ms) {
+  if (duration_ms < 300) duration_ms = 300;
+  if (duration_ms > 5000) duration_ms = 5000;
+  this->clear_rf_sequence_capture();
+  this->sequence_active_ = true;
+  this->sequence_started_ms_ = millis();
+  this->sequence_until_ms_ = this->sequence_started_ms_ + duration_ms;
+  snprintf(this->sequence_last_summary_, sizeof(this->sequence_last_summary_), "Learning sequence for %u ms", duration_ms);
+  ESP_LOGI(TAG, "RF_SEQUENCE_LEARN start duration=%u ms max_frames=%u", duration_ms, RF_SEQUENCE_MAX_FRAMES);
+}
+
+void RFBridgeComponent::clear_rf_sequence_capture() {
+  this->sequence_active_ = false;
+  this->sequence_started_ms_ = 0;
+  this->sequence_until_ms_ = 0;
+  this->sequence_count_ = 0;
+  memset(this->sequence_capture_no_, 0, sizeof(this->sequence_capture_no_));
+  memset(this->sequence_frame_ms_, 0, sizeof(this->sequence_frame_ms_));
+  memset(this->sequence_edge_count_, 0, sizeof(this->sequence_edge_count_));
+  memset(this->sequence_initial_level_, 0, sizeof(this->sequence_initial_level_));
+  memset(this->sequence_decoded_, 0, sizeof(this->sequence_decoded_));
+  memset(this->sequence_full35_, 0, sizeof(this->sequence_full35_));
+  memset(this->sequence_low24_, 0, sizeof(this->sequence_low24_));
+  memset(this->sequence_remote_id_, 0, sizeof(this->sequence_remote_id_));
+  memset(this->sequence_edges_, 0, sizeof(this->sequence_edges_));
+  memset(this->sequence_levels_, 0, sizeof(this->sequence_levels_));
+  snprintf(this->sequence_last_summary_, sizeof(this->sequence_last_summary_), "No sequence captured");
+  ESP_LOGI(TAG, "RF_SEQUENCE cleared");
+}
+
+void RFBridgeComponent::sequence_store_current_capture_(uint32_t capture_no, bool decoded) {
+  if (this->sequence_active_ && static_cast<int32_t>(millis() - this->sequence_until_ms_) > 0) {
+    this->sequence_active_ = false;
+    ESP_LOGI(TAG, "RF_SEQUENCE_LEARN timeout frames=%u", this->sequence_count_);
+  }
+  if (!this->sequence_active_) return;
+  if (this->sequence_count_ >= RF_SEQUENCE_MAX_FRAMES) {
+    this->sequence_active_ = false;
+    ESP_LOGW(TAG, "RF_SEQUENCE_LEARN full frames=%u", this->sequence_count_);
+    return;
+  }
+  const uint8_t idx = this->sequence_count_++;
+  this->sequence_capture_no_[idx] = capture_no;
+  this->sequence_frame_ms_[idx] = millis() - this->sequence_started_ms_;
+  this->sequence_edge_count_[idx] = this->rx_edge_count_;
+  this->sequence_initial_level_[idx] = this->rx_capture_initial_level_;
+  this->sequence_decoded_[idx] = decoded && this->outprize_learned_capture_no_ == capture_no;
+  if (this->sequence_decoded_[idx]) {
+    this->sequence_full35_[idx] = this->outprize_learned_full35_;
+    this->sequence_low24_[idx] = this->outprize_learned_low24_;
+    this->sequence_remote_id_[idx] = this->outprize_learned_remote_id_;
+  }
+  for (uint16_t i = 0; i < this->rx_edge_count_ && i < RX_MAX_EDGES; i++) {
+    this->sequence_edges_[idx][i] = this->rx_edges_[i];
+    this->sequence_levels_[idx][i] = this->rx_levels_[i];
+  }
+  snprintf(this->sequence_last_summary_, sizeof(this->sequence_last_summary_),
+           "%u frame(s), last %s low24=0x%06X edges=%u",
+           this->sequence_count_, this->sequence_decoded_[idx] ? "Outprize" : "raw",
+           this->sequence_low24_[idx], this->sequence_edge_count_[idx]);
+  ESP_LOGI(TAG, "RF_SEQUENCE_FRAME[%u] t=%u ms capture=%u decoded=%s low24=0x%06X edges=%u",
+           idx + 1, this->sequence_frame_ms_[idx], capture_no, YESNO(this->sequence_decoded_[idx]),
+           this->sequence_low24_[idx], this->sequence_edge_count_[idx]);
+}
+
+bool RFBridgeComponent::replay_rf_sequence_raw(uint8_t repeats) {
+  return this->transmit_sequence_raw_(repeats);
+}
+
+bool RFBridgeComponent::transmit_sequence_raw_(uint8_t repeats) {
+  if (this->sequence_count_ == 0) {
+    ESP_LOGW(TAG, "RF_SEQUENCE replay unavailable; no sequence captured");
+    return false;
+  }
+  ESP_LOGI(TAG, "RF_SEQUENCE replay start frames=%u repeats=%u", this->sequence_count_, repeats);
+  bool ok = true;
+  for (uint8_t r = 0; r < repeats; r++) {
+    for (uint8_t i = 0; i < this->sequence_count_; i++) {
+      char label[32];
+      snprintf(label, sizeof(label), "SEQ_%u", i + 1);
+      ok &= this->transmit_raw_edge_capture_(this->sequence_edges_[i], this->sequence_levels_[i],
+                                             this->sequence_edge_count_[i], this->sequence_initial_level_[i], 1, label);
+      if (i + 1 < this->sequence_count_) delay(50);
+    }
+  }
+  ESP_LOGI(TAG, "RF_SEQUENCE replay complete frames=%u ok=%s", this->sequence_count_, YESNO(ok));
+  return ok;
 }
 
 

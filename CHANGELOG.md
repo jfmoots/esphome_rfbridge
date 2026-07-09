@@ -1,6 +1,9 @@
-# v1.3.22 – Soft ASK Profiles & Clean RF Lab Controls
+# esphome_rfbridge v1.3.23
 
-- Adds send_outprize_power_off_soft_ask_profile(profile) public helper for profiles 1..4.
-- Keeps learned decoded-frame replay and learned raw-capture replay.
-- Keeps RF capture/analysis diagnostics.
-- Intended YAML replaces old accumulated one-off buttons with a small RF lab control set.
+## v1.3.23 – Multi-Frame Learn Mode & HA Status Indicators
+
+- Adds an explicit multi-frame RF sequence learning mode.
+- Adds raw replay for the captured sequence.
+- Adds public status helpers for Home Assistant template text/binary sensors.
+- Keeps learned decoded-frame replay, learned raw-capture replay, RF capture diagnostics, and Soft ASK profiles.
+- Improves troubleshooting by surfacing whether a command is actually learned and what it decoded to.

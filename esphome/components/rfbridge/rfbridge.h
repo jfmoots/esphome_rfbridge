@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <string>
 
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
@@ -101,6 +102,15 @@ class RFBridgeComponent : public Component {
   bool send_ook_test_burst(uint16_t pulse_us = 500, uint16_t pulse_count = 240, uint8_t repeats = 8);
   bool send_ook_carrier_test(uint16_t duration_ms = 500);
 
+  // v1.3.23: explicit learning UX and multi-frame button capture.
+  void start_rf_sequence_capture(uint16_t duration_ms = 1500);
+  void clear_rf_sequence_capture();
+  bool replay_rf_sequence_raw(uint8_t repeats = 1);
+  bool has_learned_command() const { return this->outprize_learned_valid_; }
+  bool has_sequence_capture() const { return this->sequence_count_ > 0; }
+  std::string get_last_learned_summary() const;
+  std::string get_sequence_summary() const;
+
  protected:
   GPIOPin *cs_pin_{nullptr};
   GPIOPin *sck_pin_{nullptr};
@@ -138,6 +148,7 @@ class RFBridgeComponent : public Component {
   void rx_poll_();
   void rx_capture_window_(int16_t trigger_rssi_dbm);
   void rx_finish_capture_(uint32_t start_us, uint32_t end_us, int16_t trigger_rssi_dbm);
+  void sequence_store_current_capture_(uint32_t capture_no, bool decoded);
   void rx_log_raw_timings_(uint32_t capture_no);
   void rx_log_full_capture_timeline_(uint32_t capture_no);
   void rx_log_pulse_histogram_(uint32_t capture_no);
@@ -238,6 +249,23 @@ class RFBridgeComponent : public Component {
   uint8_t outprize_learned_levels_[RX_MAX_EDGES]{};
   char outprize_learned_binary_[72]{};
 
+  static constexpr uint8_t RF_SEQUENCE_MAX_FRAMES = 8;
+  bool sequence_active_{false};
+  uint32_t sequence_started_ms_{0};
+  uint32_t sequence_until_ms_{0};
+  uint8_t sequence_count_{0};
+  uint32_t sequence_capture_no_[RF_SEQUENCE_MAX_FRAMES]{};
+  uint32_t sequence_frame_ms_[RF_SEQUENCE_MAX_FRAMES]{};
+  uint16_t sequence_edge_count_[RF_SEQUENCE_MAX_FRAMES]{};
+  uint8_t sequence_initial_level_[RF_SEQUENCE_MAX_FRAMES]{};
+  bool sequence_decoded_[RF_SEQUENCE_MAX_FRAMES]{};
+  uint64_t sequence_full35_[RF_SEQUENCE_MAX_FRAMES]{};
+  uint32_t sequence_low24_[RF_SEQUENCE_MAX_FRAMES]{};
+  uint16_t sequence_remote_id_[RF_SEQUENCE_MAX_FRAMES]{};
+  uint16_t sequence_edges_[RF_SEQUENCE_MAX_FRAMES][RX_MAX_EDGES]{};
+  uint8_t sequence_levels_[RF_SEQUENCE_MAX_FRAMES][RX_MAX_EDGES]{};
+  char sequence_last_summary_[96]{"No sequence captured"};
+
   uint32_t outprize_speed_base_(uint8_t speed_percent) const;
   void cc1101_configure_ook_async_tx_();
   void cc1101_set_tx_frequency_(uint8_t freq2, uint8_t freq1, uint8_t freq0, const char *label);
@@ -258,6 +286,7 @@ class RFBridgeComponent : public Component {
   bool transmit_last_capture_(uint8_t repeats = 1);
   bool transmit_raw_edge_capture_(const uint16_t *edges, const uint8_t *levels, uint16_t edge_count, uint8_t initial_level, uint8_t repeats, const char *label);
   bool transmit_learned_raw_outprize_(uint8_t repeats = 1);
+  bool transmit_sequence_raw_(uint8_t repeats = 1);
   bool transmit_learned_outprize_(uint8_t repeats = 8);
   uint16_t tx_build_edge_deltas_(uint64_t frame, uint8_t bits, TxFrameMode mode, bool include_preamble, uint16_t *out, uint16_t max_edges) const;
   void log_outprize_edge_compare_(uint64_t frame, uint8_t bits, TxFrameMode mode) const;
