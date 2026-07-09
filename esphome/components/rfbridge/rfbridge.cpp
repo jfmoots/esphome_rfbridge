@@ -1087,6 +1087,26 @@ bool RFBridgeComponent::send_outprize_low24(uint32_t remote_id, uint32_t low24, 
   return this->transmit_low24_(remote_id, low24, repeats);
 }
 
+bool RFBridgeComponent::send_outprize_low24_lsb(uint32_t low24, uint8_t repeats) {
+  return this->transmit_low24_mode_(this->outprize_remote_id_, low24, repeats, TxFrameMode::LSB_NORMAL, "LOW24_LSB_NORMAL");
+}
+
+bool RFBridgeComponent::send_outprize_low24_inverted(uint32_t low24, uint8_t repeats) {
+  return this->transmit_low24_mode_(this->outprize_remote_id_, low24, repeats, TxFrameMode::MSB_INVERTED, "LOW24_MSB_INVERTED");
+}
+
+bool RFBridgeComponent::send_outprize_low24_lsb_inverted(uint32_t low24, uint8_t repeats) {
+  return this->transmit_low24_mode_(this->outprize_remote_id_, low24, repeats, TxFrameMode::LSB_INVERTED, "LOW24_LSB_INVERTED");
+}
+
+bool RFBridgeComponent::send_outprize_raw_full35(uint64_t full35, uint8_t repeats) {
+  return this->transmit_full35_mode_(full35, repeats, TxFrameMode::MSB_NORMAL, "RAW_FULL35_MSB_NORMAL");
+}
+
+bool RFBridgeComponent::send_outprize_raw_full35_lsb(uint64_t full35, uint8_t repeats) {
+  return this->transmit_full35_mode_(full35, repeats, TxFrameMode::LSB_NORMAL, "RAW_FULL35_LSB_NORMAL");
+}
+
 void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   this->cc1101_enter_idle_();
   this->cc1101_strobe_(cc1101::SFTX);
@@ -1186,39 +1206,68 @@ void RFBridgeComponent::tx_dump_status_(const char *stage) {
            this->cc1101_read_rssi_dbm_());
 }
 
-void RFBridgeComponent::tx_send_outprize_frame_(uint32_t prefix, uint32_t low24) {
-  const uint64_t frame = ((static_cast<uint64_t>(prefix & 0x7FF)) << 24) | (low24 & 0xFFFFFFULL);
+void RFBridgeComponent::tx_log_frame_bits_(uint64_t frame, uint8_t bits, TxFrameMode mode, const char *label) const {
+  char bit_string[72];
+  if (bits >= sizeof(bit_string)) bits = sizeof(bit_string) - 1;
+  for (uint8_t i = 0; i < bits; i++) {
+    const uint8_t source_bit = (mode == TxFrameMode::LSB_NORMAL || mode == TxFrameMode::LSB_INVERTED) ? i : (bits - 1 - i);
+    bool bit_value = ((frame >> source_bit) & 0x01ULL) != 0;
+    if (mode == TxFrameMode::MSB_INVERTED || mode == TxFrameMode::LSB_INVERTED) {
+      bit_value = !bit_value;
+    }
+    bit_string[i] = bit_value ? '1' : '0';
+  }
+  bit_string[bits] = '\0';
+  ESP_LOGI(TAG, "OUTPRIZE TX bits label=%s mode=%u bits=%u full=0x%09llX stream=%s", label, static_cast<unsigned>(mode), bits,
+           static_cast<unsigned long long>(frame), bit_string);
+}
 
-  // v1.3.8 waveform-match pass.
-  // rtl_433 captures showed the CC1101 async data polarity is effectively inverted
-  // for OOK envelope purposes on this module: ESP LOW is carrier-on, ESP HIGH is
-  // carrier-off.  v1.3.6 left the line LOW during reset/inter-frame spacing, which
-  // produced unwanted ~6.1 ms carrier-on leader pulses.  Keep the proven bit timing,
-  // but make all quiet spacing carrier-off.
-  //
-  // Outprize PWM shape used here:
-  //   carrier-on pulse  ~= 488 us  (ESP LOW)
-  //   0 off gap         ~= 488 us  (ESP HIGH)
-  //   1 off gap         ~= 1464 us (ESP HIGH)
-  for (int8_t bit = OUTPRIZE_TX_BITS - 1; bit >= 0; bit--) {
-    const bool one = ((frame >> bit) & 0x01ULL) != 0;
+void RFBridgeComponent::tx_send_frame_bits_(uint64_t frame, uint8_t bits, TxFrameMode mode) {
+  // v1.3.9 keeps the v1.3.8 RF envelope/timing and varies only logical bit order/inversion.
+  // OOK envelope:
+  //   ESP LOW  = carrier on pulse
+  //   ESP HIGH = carrier off gap
+  for (uint8_t i = 0; i < bits; i++) {
+    const uint8_t source_bit = (mode == TxFrameMode::LSB_NORMAL || mode == TxFrameMode::LSB_INVERTED) ? i : (bits - 1 - i);
+    bool one = ((frame >> source_bit) & 0x01ULL) != 0;
+    if (mode == TxFrameMode::MSB_INVERTED || mode == TxFrameMode::LSB_INVERTED) {
+      one = !one;
+    }
     this->tx_write_data_(false);  // carrier on
     delayMicroseconds(OUTPRIZE_TX_PULSE_US);
     this->tx_write_data_(true);   // carrier off / symbol gap
     delayMicroseconds(one ? OUTPRIZE_TX_ONE_GAP_US : OUTPRIZE_TX_ZERO_GAP_US);
   }
 
-  this->tx_write_data_(true);  // leave RF envelope off between frames
+  this->tx_write_data_(true);
 }
 
+void RFBridgeComponent::tx_send_outprize_frame_(uint32_t prefix, uint32_t low24) {
+  const uint64_t frame = ((static_cast<uint64_t>(prefix & 0x7FF)) << 24) | (low24 & 0xFFFFFFULL);
+  this->tx_send_frame_bits_(frame, OUTPRIZE_TX_BITS, TxFrameMode::MSB_NORMAL);
+}
+
+
 bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint8_t repeats) {
+  return this->transmit_low24_mode_(remote_id, low24, repeats, TxFrameMode::MSB_NORMAL, "LOW24_MSB_NORMAL");
+}
+
+bool RFBridgeComponent::transmit_low24_mode_(uint32_t remote_id, uint32_t low24, uint8_t repeats, TxFrameMode mode, const char *label) {
+  const uint32_t prefix = remote_id == 0 ? OUTPRIZE_DEFAULT_PREFIX : (remote_id & 0x7FF);
+  const uint64_t full_frame = ((static_cast<uint64_t>(prefix & 0x7FF)) << 24) | (low24 & 0xFFFFFFULL);
+  return this->transmit_full35_mode_(full_frame, repeats, mode, label);
+}
+
+bool RFBridgeComponent::transmit_full35_mode_(uint64_t full35, uint8_t repeats, TxFrameMode mode, const char *label) {
   if (!this->cc1101_configured_ || this->gdo0_pin_ == nullptr) {
     ESP_LOGE(TAG, "OUTPRIZE TX unavailable; CC1101 configured=%s gdo0=%s", YESNO(this->cc1101_configured_),
              this->gdo0_pin_ == nullptr ? "missing" : "present");
     return false;
   }
 
-  const uint32_t prefix = remote_id == 0 ? OUTPRIZE_DEFAULT_PREFIX : (remote_id & 0x7FF);
+  const uint64_t full_frame = full35 & 0x7FFFFFFFFULL;
+  const uint32_t prefix = static_cast<uint32_t>((full_frame >> 24) & 0x7FF);
+  const uint32_t low24 = static_cast<uint32_t>(full_frame & 0xFFFFFFULL);
   if (repeats == 0) {
     repeats = 1;
   }
@@ -1227,18 +1276,23 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
   }
 
   uint8_t ones = 0;
-  const uint64_t full_frame = ((static_cast<uint64_t>(prefix & 0x7FF)) << 24) | (low24 & 0xFFFFFFULL);
-  for (uint8_t bit = 0; bit < OUTPRIZE_TX_BITS; bit++) {
-    if (((full_frame >> bit) & 0x01ULL) != 0) ones++;
+  for (uint8_t i = 0; i < OUTPRIZE_TX_BITS; i++) {
+    const uint8_t source_bit = (mode == TxFrameMode::LSB_NORMAL || mode == TxFrameMode::LSB_INVERTED) ? i : (OUTPRIZE_TX_BITS - 1 - i);
+    bool bit_value = ((full_frame >> source_bit) & 0x01ULL) != 0;
+    if (mode == TxFrameMode::MSB_INVERTED || mode == TxFrameMode::LSB_INVERTED) {
+      bit_value = !bit_value;
+    }
+    if (bit_value) ones++;
   }
   const uint8_t zeros = OUTPRIZE_TX_BITS - ones;
+  this->tx_log_frame_bits_(full_frame, OUTPRIZE_TX_BITS, mode, label);
   const uint32_t single_frame_duration_us = OUTPRIZE_TX_RESET_GAP_US + OUTPRIZE_TX_SYNC_US +
       (static_cast<uint32_t>(zeros) * (OUTPRIZE_TX_PULSE_US + OUTPRIZE_TX_ZERO_GAP_US)) +
       (static_cast<uint32_t>(ones) * (OUTPRIZE_TX_PULSE_US + OUTPRIZE_TX_ONE_GAP_US));
   const uint32_t burst_duration_us = (single_frame_duration_us * repeats) +
       (static_cast<uint32_t>(OUTPRIZE_TX_INTER_FRAME_GAP_US) * repeats);
-  ESP_LOGI(TAG, "OUTPRIZE TX start prefix=0x%03X low24=0x%06X repeats=%u bits=%u ones=%u zeros=%u timing[pulse=%u zero=%u one=%u sync=%u reset=%u gap=%u] est_duration=%u us",
-           prefix, low24 & 0xFFFFFF, repeats, OUTPRIZE_TX_BITS, ones, zeros,
+  ESP_LOGI(TAG, "OUTPRIZE TX start label=%s prefix=0x%03X low24=0x%06X full35=0x%09llX repeats=%u bits=%u ones=%u zeros=%u timing[pulse=%u zero=%u one=%u sync=%u reset=%u gap=%u] est_duration=%u us",
+           label, prefix, low24 & 0xFFFFFF, static_cast<unsigned long long>(full_frame), repeats, OUTPRIZE_TX_BITS, ones, zeros,
            OUTPRIZE_TX_PULSE_US, OUTPRIZE_TX_ZERO_GAP_US, OUTPRIZE_TX_ONE_GAP_US,
            OUTPRIZE_TX_SYNC_US, OUTPRIZE_TX_RESET_GAP_US, OUTPRIZE_TX_INTER_FRAME_GAP_US,
            burst_duration_us);
@@ -1274,7 +1328,7 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
   delayMicroseconds(OUTPRIZE_TX_ZERO_GAP_US);
 
   for (uint8_t i = 0; i < repeats; i++) {
-    this->tx_send_outprize_frame_(prefix, low24 & 0xFFFFFF);
+    this->tx_send_frame_bits_(full_frame, OUTPRIZE_TX_BITS, mode);
     delayMicroseconds(OUTPRIZE_TX_INTER_FRAME_GAP_US);
   }
 
@@ -1293,7 +1347,7 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
   this->rx_last_capture_ms_ = millis();
   this->rx_enabled_ = true;
 
-  ESP_LOGI(TAG, "OUTPRIZE TX complete low24=0x%06X", low24 & 0xFFFFFF);
+  ESP_LOGI(TAG, "OUTPRIZE TX complete label=%s low24=0x%06X", label, low24 & 0xFFFFFF);
   return true;
 }
 

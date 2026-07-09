@@ -48,6 +48,11 @@ class RFBridgeComponent : public Component {
   bool send_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats);
   bool send_outprize_power_off(uint8_t repeats = 8) { return this->send_outprize_low24(0x600000, repeats); }
   bool send_outprize_fan_off(uint8_t repeats = 8) { return this->send_outprize_low24(0x600040, repeats); }
+  bool send_outprize_low24_lsb(uint32_t low24, uint8_t repeats = 8);
+  bool send_outprize_low24_inverted(uint32_t low24, uint8_t repeats = 8);
+  bool send_outprize_low24_lsb_inverted(uint32_t low24, uint8_t repeats = 8);
+  bool send_outprize_raw_full35(uint64_t full35, uint8_t repeats = 8);
+  bool send_outprize_raw_full35_lsb(uint64_t full35, uint8_t repeats = 8);
   bool replay_last_capture(uint8_t repeats = 1);
   bool send_ook_test_burst(uint16_t pulse_us = 500, uint16_t pulse_count = 240, uint8_t repeats = 8);
   bool send_ook_carrier_test(uint16_t duration_ms = 500);
@@ -172,8 +177,13 @@ class RFBridgeComponent : public Component {
   void tx_write_data_(bool level);
   void tx_log_marcstate_(const char *stage);
   void tx_dump_status_(const char *stage);
+  enum class TxFrameMode : uint8_t { MSB_NORMAL = 0, LSB_NORMAL = 1, MSB_INVERTED = 2, LSB_INVERTED = 3 };
+  void tx_log_frame_bits_(uint64_t frame, uint8_t bits, TxFrameMode mode, const char *label) const;
   void tx_send_outprize_frame_(uint32_t prefix, uint32_t low24);
+  void tx_send_frame_bits_(uint64_t frame, uint8_t bits, TxFrameMode mode);
   bool transmit_low24_(uint32_t remote_id, uint32_t low24, uint8_t repeats = 3);
+  bool transmit_low24_mode_(uint32_t remote_id, uint32_t low24, uint8_t repeats, TxFrameMode mode, const char *label);
+  bool transmit_full35_mode_(uint64_t full35, uint8_t repeats, TxFrameMode mode, const char *label);
   bool transmit_last_capture_(uint8_t repeats = 1);
   bool transmit_ook_test_burst_(uint16_t pulse_us, uint16_t pulse_count, uint8_t repeats);
   bool start_ook_carrier_test_(uint16_t duration_ms);
