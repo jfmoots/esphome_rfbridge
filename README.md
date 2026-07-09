@@ -1,5 +1,7 @@
-# ESPHome RF Bridge v1.3.16
+# ESPHome RF Bridge v1.3.17
 
-Outprize RF Bridge external component with OEM header timing match and retained learning/analyze diagnostics.
+This release adds full RF capture timeline diagnostics while keeping the v1.3.16 transmitter behavior unchanged.
 
-This release keeps the v1.3.16 learner, candidate alignment diagnostics, and learned-vs-TX compare tooling, while changing TX startup timing to match the learned OEM Power Off header.
+The goal is to understand what the ESP actually captures from the OEM remote before and around the decoded Outprize frame start. The new diagnostics print the RSSI-triggered capture as cumulative edge timings and mark the learned frame boundaries when available.
+
+No YAML changes are required from v1.3.16.

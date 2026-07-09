@@ -115,6 +115,7 @@ class RFBridgeComponent : public Component {
   void rx_capture_window_(int16_t trigger_rssi_dbm);
   void rx_finish_capture_(uint32_t start_us, uint32_t end_us, int16_t trigger_rssi_dbm);
   void rx_log_raw_timings_(uint32_t capture_no);
+  void rx_log_full_capture_timeline_(uint32_t capture_no);
   void rx_log_pulse_histogram_(uint32_t capture_no);
   void rx_log_protocol_analysis_(uint32_t capture_no);
   bool rx_log_outprize_decode_(uint32_t capture_no);
@@ -137,7 +138,7 @@ class RFBridgeComponent : public Component {
   uint32_t rx_capture_fingerprint_() const;
   void rx_reset_packet_(uint32_t now_us, bool level);
 
-  static constexpr uint16_t RX_MAX_EDGES = 220;
+  static constexpr uint16_t RX_MAX_EDGES = 360;
   // Match the original diagnostic sniffer shape: ignore GDO0 chatter until
   // RSSI indicates a real nearby transmitter, then capture a fixed window.
   static constexpr int16_t RX_RSSI_ARM_DBM = -80;
@@ -180,6 +181,7 @@ class RFBridgeComponent : public Component {
   uint32_t rx_last_rssi_poll_ms_{0};
   uint32_t rx_last_capture_ms_{0};
   uint16_t rx_edge_count_{0};
+  uint8_t rx_capture_initial_level_{0};
   uint16_t rx_overruns_{0};
   uint32_t rx_packets_seen_{0};
   uint32_t rx_edges_seen_{0};

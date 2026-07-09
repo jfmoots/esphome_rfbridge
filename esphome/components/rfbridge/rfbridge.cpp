@@ -391,6 +391,7 @@ void RFBridgeComponent::rx_capture_window_(int16_t trigger_rssi_dbm) {
   const uint32_t start_us = micros();
   uint32_t last_edge_us = start_us;
   bool last_level = this->gdo0_pin_->digital_read();
+  this->rx_capture_initial_level_ = last_level ? 1 : 0;
 
   while ((micros() - start_us) < RX_CAPTURE_WINDOW_US) {
     const bool level = this->gdo0_pin_->digital_read();
@@ -456,6 +457,7 @@ void RFBridgeComponent::rx_finish_capture_(uint32_t start_us, uint32_t end_us, i
   const bool decoded = this->rx_log_outprize_decode_(this->rx_packets_seen_);
 
   if (this->diagnostic_logging_) {
+    this->rx_log_full_capture_timeline_(this->rx_packets_seen_);
     this->rx_log_raw_timings_(this->rx_packets_seen_);
     this->rx_log_pulse_histogram_(this->rx_packets_seen_);
     this->rx_log_protocol_analysis_(this->rx_packets_seen_);
@@ -477,6 +479,68 @@ void RFBridgeComponent::rx_log_raw_timings_(uint32_t capture_no) {
     }
     ESP_LOGI(TAG, "%s", line);
   }
+}
+
+
+void RFBridgeComponent::rx_log_full_capture_timeline_(uint32_t capture_no) {
+  ESP_LOGI(TAG, "===== RF_FULL_CAPTURE_TIMELINE =====");
+  ESP_LOGI(TAG, "Capture #%u trigger_rssi=%d dBm end_rssi=%d dBm initial_gdo0=%u edge_count=%u duration=%u us",
+           capture_no, this->rx_last_trigger_rssi_dbm_, this->rx_last_rssi_dbm_,
+           this->rx_capture_initial_level_, this->rx_edge_count_, this->rx_last_packet_duration_us_);
+
+  const bool have_learned_for_capture = this->outprize_learned_valid_ && this->outprize_learned_capture_no_ == capture_no;
+  const uint16_t data_start = have_learned_for_capture ? this->outprize_learned_start_index_ : 0xFFFF;
+  const uint16_t data_stop = have_learned_for_capture ? this->outprize_learned_stop_index_ : 0xFFFF;
+  if (have_learned_for_capture) {
+    ESP_LOGI(TAG, "Markers: RSSI_TRIGGER=t0 first_edge_delay=%u us decoder_start_edge=%u decoder_stop_edge=%u learned_full35=0x%09llX",
+             this->rx_edge_count_ > 0 ? this->rx_edges_[0] : 0, data_start, data_stop,
+             static_cast<unsigned long long>(this->outprize_learned_full35_));
+  } else {
+    ESP_LOGI(TAG, "Markers: RSSI_TRIGGER=t0 first_edge_delay=%u us decoder_start_edge=unknown decoder_stop_edge=unknown",
+             this->rx_edge_count_ > 0 ? this->rx_edges_[0] : 0);
+  }
+
+  // Print cumulative edge timing with the GDO0 level after each transition.
+  // This is the highest-fidelity view currently available from the ESP-side
+  // RSSI-gated capture path and helps distinguish real preamble/header edges
+  // from decoder alignment artifacts.
+  uint32_t t = 0;
+  for (uint16_t row = 0; row < this->rx_edge_count_ && row < 96; row += 8) {
+    char line[260];
+    uint16_t pos = 0;
+    const uint16_t end = (row + 7 < this->rx_edge_count_) ? row + 7 : this->rx_edge_count_ - 1;
+    pos += snprintf(line + pos, sizeof(line) - pos, "  edges[%03u-%03u]", row, end);
+    for (uint16_t i = row; i <= end; i++) {
+      // Recompute cumulative time for this row start to avoid storing another array.
+      if (i == row) {
+        t = 0;
+        for (uint16_t j = 0; j <= i; j++) t += this->rx_edges_[j];
+      } else {
+        t += this->rx_edges_[i];
+      }
+      const bool is_start = have_learned_for_capture && i == data_start;
+      const bool is_stop = have_learned_for_capture && i == data_stop;
+      pos += snprintf(line + pos, sizeof(line) - pos, " %s%u:%u/%u%s",
+                      is_start ? "<" : "", i, this->rx_edges_[i], t, is_stop ? ">" : "");
+    }
+    ESP_LOGI(TAG, "%s", line);
+  }
+  if (this->rx_edge_count_ > 96) {
+    ESP_LOGI(TAG, "  timeline truncated at 96 of %u edges", this->rx_edge_count_);
+  }
+
+  if (have_learned_for_capture) {
+    char pre[220];
+    uint16_t p = 0;
+    const uint16_t pre_start = data_start >= 8 ? data_start - 8 : 0;
+    p += snprintf(pre + p, sizeof(pre) - p, "Pre-data edge deltas [%u-%u]:", pre_start, data_start);
+    for (uint16_t i = pre_start; i <= data_start && i < this->rx_edge_count_; i++) {
+      p += snprintf(pre + p, sizeof(pre) - p, " %u", this->rx_edges_[i]);
+    }
+    ESP_LOGI(TAG, "%s", pre);
+    ESP_LOGI(TAG, "Note: this is an RSSI-triggered capture; true RF activity before RSSI_TRIGGER is not observable without a continuous pre-trigger buffer.");
+  }
+  ESP_LOGI(TAG, "====================================");
 }
 
 void RFBridgeComponent::rx_log_pulse_histogram_(uint32_t capture_no) {
