@@ -1091,7 +1091,7 @@ void RFBridgeComponent::cc1101_configure_ook_async_tx_() {
   this->cc1101_enter_idle_();
   this->cc1101_strobe_(cc1101::SFTX);
 
-  // v1.3.5 deliberately programs a full async OOK TX profile instead of
+  // v1.3.5+ deliberately programs a full async OOK TX profile instead of
   // inheriting the RX/sniffer profile.  The RX decoder is restored after each
   // transmission by cc1101_configure_ook_async_rx_().
   ESP_LOGI(TAG, "Configuring CC1101 full async OOK TX profile at 433.92 MHz (PA=0x%02X)", CC1101_TX_PA_TEST);
@@ -1189,12 +1189,17 @@ void RFBridgeComponent::tx_dump_status_(const char *stage) {
 void RFBridgeComponent::tx_send_outprize_frame_(uint32_t prefix, uint32_t low24) {
   const uint64_t frame = ((static_cast<uint64_t>(prefix & 0x7FF)) << 24) | (low24 & 0xFFFFFFULL);
 
-  // Observed Outprize gap-width PWM:
+  // v1.3.6 waveform-match pass based on paired rtl_433 -A captures.
+  // OEM Power Off baseline was built around ~488 us half-cells, ~976 us full-cells,
+  // and ~3040 us repeat spacing. Keep CC1101 TX config unchanged; only shape
+  // the Outprize protocol waveform here.
+  //
+  // Gap-width PWM:
   //   reset/quiet low gap
-  //   high sync ~4.5 ms
+  //   high sync
   //   each data bit: short low pulse, then high gap
-  //     0 = ~500 us high gap
-  //     1 = ~1500 us high gap
+  //     0 = ~488 us high gap
+  //     1 = ~1464 us high gap
   this->tx_write_data_(false);
   delayMicroseconds(OUTPRIZE_TX_RESET_GAP_US);
 
@@ -1227,10 +1232,22 @@ bool RFBridgeComponent::transmit_low24_(uint32_t remote_id, uint32_t low24, uint
     repeats = 12;
   }
 
-  const uint32_t frame_duration_us = OUTPRIZE_TX_RESET_GAP_US + OUTPRIZE_TX_SYNC_US +
-      (OUTPRIZE_TX_BITS * (OUTPRIZE_TX_PULSE_US + OUTPRIZE_TX_ONE_GAP_US)) + OUTPRIZE_TX_INTER_FRAME_GAP_US;
-  ESP_LOGI(TAG, "OUTPRIZE TX start prefix=0x%03X low24=0x%06X repeats=%u est_duration=%u us",
-           prefix, low24 & 0xFFFFFF, repeats, frame_duration_us * repeats);
+  uint8_t ones = 0;
+  const uint64_t full_frame = ((static_cast<uint64_t>(prefix & 0x7FF)) << 24) | (low24 & 0xFFFFFFULL);
+  for (uint8_t bit = 0; bit < OUTPRIZE_TX_BITS; bit++) {
+    if (((full_frame >> bit) & 0x01ULL) != 0) ones++;
+  }
+  const uint8_t zeros = OUTPRIZE_TX_BITS - ones;
+  const uint32_t single_frame_duration_us = OUTPRIZE_TX_RESET_GAP_US + OUTPRIZE_TX_SYNC_US +
+      (static_cast<uint32_t>(zeros) * (OUTPRIZE_TX_PULSE_US + OUTPRIZE_TX_ZERO_GAP_US)) +
+      (static_cast<uint32_t>(ones) * (OUTPRIZE_TX_PULSE_US + OUTPRIZE_TX_ONE_GAP_US));
+  const uint32_t burst_duration_us = (single_frame_duration_us * repeats) +
+      (static_cast<uint32_t>(OUTPRIZE_TX_INTER_FRAME_GAP_US) * repeats);
+  ESP_LOGI(TAG, "OUTPRIZE TX start prefix=0x%03X low24=0x%06X repeats=%u bits=%u ones=%u zeros=%u timing[pulse=%u zero=%u one=%u sync=%u reset=%u gap=%u] est_duration=%u us",
+           prefix, low24 & 0xFFFFFF, repeats, OUTPRIZE_TX_BITS, ones, zeros,
+           OUTPRIZE_TX_PULSE_US, OUTPRIZE_TX_ZERO_GAP_US, OUTPRIZE_TX_ONE_GAP_US,
+           OUTPRIZE_TX_SYNC_US, OUTPRIZE_TX_RESET_GAP_US, OUTPRIZE_TX_INTER_FRAME_GAP_US,
+           burst_duration_us);
 
   // Pause RX while transmitting.  GDO0 normally acts as the CC1101 async data
   // output during receive; for async transmit we drive the same line from the ESP.

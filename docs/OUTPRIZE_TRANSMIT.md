@@ -55,3 +55,8 @@ button:
       - lambda: |-
           id(rf_bridge).replay_last_capture(1);
 ```
+
+
+## v1.3.6 waveform matching notes
+
+Paired rtl_433 -A captures showed that v1.3.5 was radiating but its burst was longer than the OEM remote (about 549 ms vs about 394 ms for Power Off). The v1.3.6 pass keeps the working CC1101 transmit configuration and adjusts only the software-generated Outprize waveform timing. The target baseline is approximately 488 us short cells, 976 us full cells, and about 3040 us repeat spacing.

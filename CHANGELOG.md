@@ -1,8 +1,20 @@
 # Changelog
 
-## v1.3.5 - Full CC1101 TX Profile
+## v1.3.6 – Outprize Waveform Match Pass
 
-- Updates firmware version to 1.3.5.
+- Keeps the v1.3.5 CC1101 TX profile and calibration path unchanged.
+- Adjusts Outprize TX waveform timing to better match paired rtl_433 -A captures from the OEM remote.
+- Changes base pulse timing to 488 us.
+- Changes zero and one gaps to 488 us and 1464 us.
+- Changes reset/sync/inter-frame timing toward the observed OEM repeat spacing.
+- Adds clearer TX waveform diagnostics showing bit count, ones/zeros, timing constants, repeat count, and estimated burst duration.
+- RX decoder path remains unchanged.
+
+# Changelog
+
+## v1.3.6 - Full CC1101 TX Profile
+
+- Updates firmware version to 1.3.6.
 - Replaces the minimal TX setup with an explicit full CC1101 async OOK TX register profile.
 - Changes the TX diagnostic PA table value from 0x84 to 0xC0.
 - Uses async serial + infinite packet baseline (`PKTCTRL0 = 0x32`) for TX diagnostics.
