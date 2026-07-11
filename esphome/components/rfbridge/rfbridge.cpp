@@ -9,6 +9,58 @@ namespace rfbridge {
 
 static const char *const TAG = "rfbridge";
 
+
+fan::FanTraits OutprizeFan::get_traits() {
+  fan::FanTraits traits;
+  traits.set_supported_speed_count(10);
+  traits.set_supports_direction(true);
+  traits.set_supports_oscillation(false);
+  return traits;
+}
+
+void OutprizeFan::control(const fan::FanCall &call) {
+  if (this->parent_ == nullptr) return;
+  auto state = this->parent_->get_outprize_state();
+  if (call.get_state().has_value()) state.power = *call.get_state();
+  if (call.get_speed().has_value()) {
+    state.speed_percent = static_cast<uint8_t>(*call.get_speed() * 10);
+    state.power = state.speed_percent > 0;
+  }
+  if (call.get_direction().has_value()) {
+    state.direction = *call.get_direction() == fan::FanDirection::REVERSE ? OutprizeDirection::IN : OutprizeDirection::OUT;
+  }
+  if (state.power && state.speed_percent == 0) state.speed_percent = 10;
+  this->parent_->command_outprize_state(state.power, state.speed_percent, state.direction, state.rain_enabled, state.vent_open);
+}
+
+cover::CoverTraits OutprizeVentCover::get_traits() {
+  auto traits = cover::CoverTraits();
+  traits.set_supports_position(false);
+  traits.set_supports_stop(true);
+  return traits;
+}
+
+void OutprizeVentCover::control(const cover::CoverCall &call) {
+  if (this->parent_ == nullptr) return;
+  auto state = this->parent_->get_outprize_state();
+  if (call.get_stop()) {
+    const uint32_t low24 = this->parent_->encode_outprize_low24(state.speed_percent, state.direction, state.rain_enabled,
+                                                                OutprizeVentCommand::STOP);
+    this->parent_->replay_manufactured_outprize_low24(low24, 1);
+    return;
+  }
+  if (call.get_position().has_value()) {
+    state.vent_open = *call.get_position() > 0.5f;
+    this->parent_->command_outprize_state(state.power, state.speed_percent, state.direction, state.rain_enabled, state.vent_open);
+  }
+}
+
+void OutprizeRainSwitch::write_state(bool state) {
+  if (this->parent_ == nullptr) return;
+  auto current = this->parent_->get_outprize_state();
+  this->parent_->command_outprize_state(current.power, current.speed_percent, current.direction, state, current.vent_open);
+}
+
 void RFBridgeComponent::setup() {
   ESP_LOGI(TAG, "======================================");
   ESP_LOGI(TAG, "ESPHome RF Bridge v%s", RFBRIDGE_VERSION);
@@ -1120,6 +1172,10 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
     confidence = "fair";
   }
 
+  if (best.valid && best.bit_count >= OUTPRIZE_TX_BITS && best.remote_id == this->outprize_remote_id_ && millis() >= this->suppress_rx_until_ms_) {
+    this->update_outprize_state_from_low24_(best.low24, "OEM Remote");
+  }
+
   if (best.valid && best.bit_count >= OUTPRIZE_TX_BITS && this->sequence_active_) {
     this->outprize_learned_valid_ = true;
     this->outprize_learned_full35_ = best.full_packet & 0x7FFFFFFFFULL;
@@ -1243,6 +1299,75 @@ uint32_t RFBridgeComponent::outprize_speed_base_(uint8_t speed_percent) const {
     default:
       return this->outprize_speed_base_(static_cast<uint8_t>(((speed_percent + 5) / 10) * 10));
   }
+}
+
+
+uint8_t RFBridgeComponent::decode_outprize_speed_(uint32_t low24) const {
+  switch (low24 & 0x7C0) {
+    case 0x040: return 0;
+    case 0x440: return 10;
+    case 0x240: return 20;
+    case 0x640: return 30;
+    case 0x140: return 40;
+    case 0x540: return 50;
+    case 0x340: return 60;
+    case 0x740: return 70;
+    case 0x0C0: return 80;
+    case 0x4C0: return 90;
+    case 0x2C0: return 100;
+    default: return 0;
+  }
+}
+
+void RFBridgeComponent::update_outprize_state_from_low24_(uint32_t low24, const char *source) {
+  low24 &= 0xFFFFFF;
+  this->outprize_state_.low24 = low24;
+  this->outprize_state_.power = low24 != 0x600000;
+  this->outprize_state_.speed_percent = this->decode_outprize_speed_(low24);
+  this->outprize_state_.direction = (low24 & 0x20) ? OutprizeDirection::IN : OutprizeDirection::OUT;
+  this->outprize_state_.rain_enabled = (low24 & 0x10) != 0;
+  const uint8_t vent = low24 & 0x0C;
+  if (vent == static_cast<uint8_t>(OutprizeVentCommand::OPEN)) this->outprize_state_.vent_open = true;
+  if (vent == static_cast<uint8_t>(OutprizeVentCommand::CLOSE) || low24 == 0x600000) this->outprize_state_.vent_open = false;
+  this->publish_outprize_state(source);
+}
+
+void RFBridgeComponent::publish_outprize_state(const char *source) {
+  if (this->outprize_fan_ != nullptr) {
+    this->outprize_fan_->state = this->outprize_state_.power && this->outprize_state_.speed_percent > 0;
+    this->outprize_fan_->speed = this->outprize_state_.speed_percent / 10;
+    this->outprize_fan_->direction = this->outprize_state_.direction == OutprizeDirection::IN ? fan::FanDirection::REVERSE : fan::FanDirection::FORWARD;
+    this->outprize_fan_->publish_state();
+  }
+  if (this->outprize_vent_cover_ != nullptr) {
+    this->outprize_vent_cover_->position = this->outprize_state_.vent_open ? cover::COVER_OPEN : cover::COVER_CLOSED;
+    this->outprize_vent_cover_->publish_state();
+  }
+  if (this->outprize_rain_switch_ != nullptr) this->outprize_rain_switch_->publish_state(this->outprize_state_.rain_enabled);
+  if (this->outprize_source_sensor_ != nullptr) this->outprize_source_sensor_->publish_state(source);
+  ESP_LOGI(TAG, "OUTPRIZE_STATE source=%s power=%s speed=%u direction=%s rain=%s vent=%s low24=0x%06X",
+           source, YESNO(this->outprize_state_.power), this->outprize_state_.speed_percent,
+           this->outprize_state_.direction == OutprizeDirection::IN ? "IN" : "OUT",
+           YESNO(this->outprize_state_.rain_enabled), this->outprize_state_.vent_open ? "OPEN" : "CLOSED",
+           this->outprize_state_.low24);
+}
+
+bool RFBridgeComponent::command_outprize_state(bool power, uint8_t speed_percent, OutprizeDirection direction,
+                                                bool rain_enabled, bool vent_open) {
+  uint32_t low24;
+  if (!power) {
+    low24 = 0x600000;
+  } else {
+    if (speed_percent == 0) speed_percent = 10;
+    low24 = this->encode_outprize_low24(speed_percent, direction, rain_enabled,
+                                        vent_open ? OutprizeVentCommand::OPEN : OutprizeVentCommand::CLOSE);
+  }
+  const bool ok = this->replay_manufactured_outprize_low24(low24, 1);
+  if (ok) {
+    this->suppress_rx_until_ms_ = millis() + 250;
+    this->update_outprize_state_from_low24_(low24, "Home Assistant");
+  }
+  return ok;
 }
 
 uint32_t RFBridgeComponent::encode_outprize_low24(uint8_t speed_percent, OutprizeDirection direction,

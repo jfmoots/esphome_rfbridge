@@ -1,6 +1,7 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import pins, automation
+from esphome.components import fan, cover, switch, text_sensor
 from esphome.const import CONF_ID
 
 CONF_CS_PIN = "cs_pin"
@@ -16,9 +17,16 @@ CONF_DIAGNOSTIC_LOGGING = "diagnostic_logging"
 CONF_LOW24 = "low24"
 CONF_REMOTE_ID = "remote_id"
 CONF_REPEATS = "repeats"
+CONF_FAN = "fan"
+CONF_VENT = "vent"
+CONF_RAIN_SENSOR = "rain_sensor"
+CONF_LAST_COMMAND_SOURCE = "last_command_source"
 
 rfbridge_ns = cg.esphome_ns.namespace("rfbridge")
 RFBridgeComponent = rfbridge_ns.class_("RFBridgeComponent", cg.Component)
+OutprizeFan = rfbridge_ns.class_("OutprizeFan", fan.Fan)
+OutprizeVentCover = rfbridge_ns.class_("OutprizeVentCover", cover.Cover)
+OutprizeRainSwitch = rfbridge_ns.class_("OutprizeRainSwitch", switch.Switch)
 SendOutprizeLow24Action = rfbridge_ns.class_("SendOutprizeLow24Action", automation.Action)
 SendOutprizePowerOffAction = rfbridge_ns.class_("SendOutprizePowerOffAction", automation.Action)
 SendOutprizeFanOffAction = rfbridge_ns.class_("SendOutprizeFanOffAction", automation.Action)
@@ -37,6 +45,10 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_SRX882_ENABLE_PIN): pins.gpio_output_pin_schema,
         cv.Optional(CONF_DIAGNOSTIC_LOGGING, default=False): cv.boolean,
         cv.Optional(CONF_REMOTE_ID, default=0x6CF): cv.hex_uint32_t,
+        cv.Optional(CONF_FAN): fan.FAN_SCHEMA.extend({cv.GenerateID(): cv.declare_id(OutprizeFan)}),
+        cv.Optional(CONF_VENT): cover.COVER_SCHEMA.extend({cv.GenerateID(): cv.declare_id(OutprizeVentCover)}),
+        cv.Optional(CONF_RAIN_SENSOR): switch.switch_schema(OutprizeRainSwitch),
+        cv.Optional(CONF_LAST_COMMAND_SOURCE): text_sensor.text_sensor_schema(),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -67,6 +79,25 @@ async def to_code(config):
 
     cg.add(var.set_diagnostic_logging(config[CONF_DIAGNOSTIC_LOGGING]))
     cg.add(var.set_outprize_remote_id(config[CONF_REMOTE_ID]))
+
+    if CONF_FAN in config:
+        ent = cg.new_Pvariable(config[CONF_FAN][CONF_ID])
+        await fan.register_fan(ent, config[CONF_FAN])
+        cg.add(var.set_outprize_fan(ent))
+
+    if CONF_VENT in config:
+        ent = cg.new_Pvariable(config[CONF_VENT][CONF_ID])
+        await cover.register_cover(ent, config[CONF_VENT])
+        cg.add(var.set_outprize_vent_cover(ent))
+
+    if CONF_RAIN_SENSOR in config:
+        ent = cg.new_Pvariable(config[CONF_RAIN_SENSOR][CONF_ID])
+        await switch.register_switch(ent, config[CONF_RAIN_SENSOR])
+        cg.add(var.set_outprize_rain_switch(ent))
+
+    if CONF_LAST_COMMAND_SOURCE in config:
+        ent = await text_sensor.new_text_sensor(config[CONF_LAST_COMMAND_SOURCE])
+        cg.add(var.set_outprize_source_sensor(ent))
 
 
 OUTPRIZE_ACTION_BASE_SCHEMA = cv.Schema(

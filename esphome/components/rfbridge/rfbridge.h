@@ -8,6 +8,10 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/automation.h"
 #include "esphome/core/helpers.h"
+#include "esphome/components/fan/fan.h"
+#include "esphome/components/cover/cover.h"
+#include "esphome/components/switch/switch.h"
+#include "esphome/components/text_sensor/text_sensor.h"
 
 namespace esphome {
 namespace rfbridge {
@@ -22,6 +26,44 @@ enum class OutprizeVentCommand : uint8_t {
   CLOSE = 0x04,
   OPEN = 0x08,
   STOP = 0x0C,
+};
+
+
+struct OutprizeState {
+  bool power{false};
+  uint8_t speed_percent{0};
+  OutprizeDirection direction{OutprizeDirection::OUT};
+  bool rain_enabled{false};
+  bool vent_open{false};
+  uint32_t low24{0x600000};
+};
+
+class RFBridgeComponent;
+
+class OutprizeFan : public fan::Fan {
+ public:
+  void set_parent(RFBridgeComponent *parent) { parent_ = parent; }
+  fan::FanTraits get_traits() override;
+ protected:
+  void control(const fan::FanCall &call) override;
+  RFBridgeComponent *parent_{nullptr};
+};
+
+class OutprizeVentCover : public cover::Cover {
+ public:
+  void set_parent(RFBridgeComponent *parent) { parent_ = parent; }
+  cover::CoverTraits get_traits() override;
+ protected:
+  void control(const cover::CoverCall &call) override;
+  RFBridgeComponent *parent_{nullptr};
+};
+
+class OutprizeRainSwitch : public switch_::Switch {
+ public:
+  void set_parent(RFBridgeComponent *parent) { parent_ = parent; }
+ protected:
+  void write_state(bool state) override;
+  RFBridgeComponent *parent_{nullptr};
 };
 
 class RFBridgeComponent : public Component {
@@ -41,6 +83,14 @@ class RFBridgeComponent : public Component {
   void set_srx882_enable_pin(GPIOPin *pin) { this->srx882_enable_pin_ = pin; }
   void set_diagnostic_logging(bool diagnostic_logging) { this->diagnostic_logging_ = diagnostic_logging; }
   void set_outprize_remote_id(uint32_t remote_id) { this->outprize_remote_id_ = remote_id & 0x7FF; }
+  void set_outprize_fan(OutprizeFan *entity) { outprize_fan_ = entity; entity->set_parent(this); }
+  void set_outprize_vent_cover(OutprizeVentCover *entity) { outprize_vent_cover_ = entity; entity->set_parent(this); }
+  void set_outprize_rain_switch(OutprizeRainSwitch *entity) { outprize_rain_switch_ = entity; entity->set_parent(this); }
+  void set_outprize_source_sensor(text_sensor::TextSensor *entity) { outprize_source_sensor_ = entity; }
+
+  const OutprizeState &get_outprize_state() const { return outprize_state_; }
+  bool command_outprize_state(bool power, uint8_t speed_percent, OutprizeDirection direction, bool rain_enabled, bool vent_open);
+  void publish_outprize_state(const char *source);
 
   uint32_t encode_outprize_low24(uint8_t speed_percent, OutprizeDirection direction, bool rain_enabled,
                                  OutprizeVentCommand vent_command) const;
@@ -147,6 +197,16 @@ class RFBridgeComponent : public Component {
   std::string get_outprize_template_summary() const;
 
  protected:
+  OutprizeState outprize_state_{};
+  OutprizeFan *outprize_fan_{nullptr};
+  OutprizeVentCover *outprize_vent_cover_{nullptr};
+  OutprizeRainSwitch *outprize_rain_switch_{nullptr};
+  text_sensor::TextSensor *outprize_source_sensor_{nullptr};
+  bool suppress_rx_until_{false};
+  uint32_t suppress_rx_until_ms_{0};
+  void update_outprize_state_from_low24_(uint32_t low24, const char *source);
+  uint8_t decode_outprize_speed_(uint32_t low24) const;
+
   GPIOPin *cs_pin_{nullptr};
   GPIOPin *sck_pin_{nullptr};
   GPIOPin *mosi_pin_{nullptr};
