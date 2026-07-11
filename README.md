@@ -1,6 +1,8 @@
-# ESPHome RF Bridge v1.5.1
+# ESPHome RF Bridge v1.5.2
 
-v1.5.1 introduces the codec-oriented RF Bridge architecture while preserving the proven v1.4.1 Outprize API and RF behavior.
+v1.5.2 fixes ESPHome codec linking while preserving the codec-oriented RF Bridge architecture and the proven v1.4.1 Outprize API/RF behavior.
+
+The Outprize codec remains a separate class and interface, but its implementation is included in the primary `rfbridge.cpp` translation unit because ESPHome 2026.6.x does not automatically compile additional `.cpp` files shipped beside an external component.
 
 ## Architecture
 

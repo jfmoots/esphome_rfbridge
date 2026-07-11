@@ -67,4 +67,4 @@ The ESP does not create fan, cover, rain, tire, or other product-specific entiti
 
 ## Compatibility
 
-v1.5.1 keeps the v1.4.1 Outprize API contract while moving toward codec-based discovery and events. This lets the HA integration be built before removing temporary test surfaces.
+v1.5.2 keeps the v1.4.1 Outprize API contract while moving toward codec-based discovery and events. This lets the HA integration be built before removing temporary test surfaces.

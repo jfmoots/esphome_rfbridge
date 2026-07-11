@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.5.2 – ESPHome Codec Link Fix
+
+- Fixes linker errors for `OutprizeCodec::capability_summary()` and the `OutprizeCodec` vtable.
+- Keeps `OutprizeCodec` compartmentalized behind the generic `RFBridgeCodec` interface.
+- Moves codec method definitions into an explicitly included implementation header so ESPHome compiles them in the primary `rfbridge.cpp` translation unit.
+- Removes the uncompiled standalone `outprize_codec.cpp`.
+- Preserves all v1.4.1 API, receive, decode, state-cache, and STX882 transmit behavior.
+- No YAML changes from v1.5.0/v1.5.1.
+
 
 ## v1.5.1 – ESPHome Codec Source Packaging Fix
 

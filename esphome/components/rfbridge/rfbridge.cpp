@@ -2,6 +2,7 @@
 #include "rfbridge.h"
 #include "cc1101_regs.h"
 #include "version.h"
+#include "outprize_codec_impl.h"
 #include "esphome/core/log.h"
 #include <cstdio>
 
