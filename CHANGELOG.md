@@ -1,12 +1,23 @@
 # Changelog
 
-## v1.3.26 — Smart RF Burst Recorder
+## v1.3.27 – Accepted Waveform Template & State Manufacturer
 
-- Replaces full-window SRX882 recording with burst extraction.
-- Arms for up to the requested window but stores only the highest-quality RF burst.
-- Splits acquisition data at long quiet gaps.
-- Scores candidate bursts using edge density and expected ASK/OOK timing ranges.
-- Rejects SRX882 idle chatter before and after the selected burst.
-- Reports selected edge count, duration, and rejected edge counts in Home Assistant.
-- Keeps the proven SRX882 capture and STX882 raw replay backend unchanged.
-- No YAML changes from v1.3.25.
+- Adds an edge-for-edge dump of the known-good SRX882 recording.
+- Finds the embedded 35-bit Outprize payload within the accepted burst.
+- Determines bit order/inversion and measured pulse/short-gap/long-gap timing.
+- Adds a persistent in-RAM Outprize waveform template derived from the accepted Power Off recording.
+- Adds manufactured arbitrary Low24 replay through STX882 while preserving the accepted header, trailer, levels, and pulse widths.
+- Adds full-state manufactured replay using the canonical Gray-coded speed, direction, rain, and vent encoding.
+- Keeps the v1.3.26 smart burst recorder unchanged.
+
+# esphome_rfbridge v1.3.25
+
+## v1.3.25 – SRX882/STX882 Raw RF Recorder
+
+- Adds an explicit RF recorder using the proven SRX882 raw capture and STX882 raw replay path.
+- Adds `start_rf_recorder(duration_ms)`.
+- Adds `replay_rf_recording(repeats)`.
+- Adds `clear_rf_recording()`.
+- Adds Home Assistant-visible recorder availability, state, and recording summary helpers.
+- Recording is deliberately gated and cannot be silently overwritten by ambient RF or later remote use.
+- Keeps the v1.3.24 diagnostic and legacy transmit paths available in code.

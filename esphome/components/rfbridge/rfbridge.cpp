@@ -2690,5 +2690,196 @@ std::string RFBridgeComponent::get_rf_recording_summary() const {
   return std::string(summary);
 }
 
+
+bool RFBridgeComponent::outprize_template_bit_(uint64_t frame, uint8_t bit_index, TxFrameMode mode) const {
+  const uint8_t source_bit = (mode == TxFrameMode::LSB_NORMAL || mode == TxFrameMode::LSB_INVERTED)
+                                 ? bit_index
+                                 : (OUTPRIZE_TX_BITS - 1 - bit_index);
+  bool value = ((frame >> source_bit) & 0x01ULL) != 0;
+  if (mode == TxFrameMode::MSB_INVERTED || mode == TxFrameMode::LSB_INVERTED) value = !value;
+  return value;
+}
+
+void RFBridgeComponent::log_rf_recording_edges_() const {
+  if (!this->srx882_capture_valid_) {
+    ESP_LOGW(TAG, "OUTPRIZE_TEMPLATE_DUMP unavailable; no RF recording");
+    return;
+  }
+  ESP_LOGI(TAG, "===== OUTPRIZE_ACCEPTED_RECORDING =====");
+  ESP_LOGI(TAG, "recording=%u edges=%u duration=%u us initial=%u",
+           static_cast<unsigned>(this->rf_recording_number_), this->srx882_edge_count_,
+           static_cast<unsigned>(this->srx882_capture_duration_us_), this->srx882_initial_level_);
+  for (uint16_t row = 0; row < this->srx882_edge_count_; row += 12) {
+    char line[360]{};
+    size_t p = 0;
+    p += snprintf(line + p, sizeof(line) - p, "  edges[%03u-%03u]", row,
+                  static_cast<unsigned>(((row + 11) < this->srx882_edge_count_) ? (row + 11) : (this->srx882_edge_count_ - 1)));
+    for (uint16_t i = row; i < this->srx882_edge_count_ && i < row + 12; i++) {
+      p += snprintf(line + p, sizeof(line) - p, " %u:%u>%u", i, this->srx882_edges_[i],
+                    this->srx882_levels_[i]);
+    }
+    ESP_LOGI(TAG, "%s", line);
+  }
+  ESP_LOGI(TAG, "=========================================");
+}
+
+bool RFBridgeComponent::analyze_rf_recording_outprize(uint32_t source_low24) {
+  this->outprize_template_valid_ = false;
+  snprintf(this->outprize_template_summary_, sizeof(this->outprize_template_summary_),
+           "No valid Outprize template");
+  if (!this->srx882_capture_valid_ || this->srx882_edge_count_ < OUTPRIZE_TX_BITS * 2) {
+    ESP_LOGW(TAG, "OUTPRIZE_TEMPLATE analyze blocked; recording valid=%s edges=%u",
+             YESNO(this->srx882_capture_valid_), this->srx882_edge_count_);
+    return false;
+  }
+
+  this->log_rf_recording_edges_();
+  const uint64_t source_frame = (static_cast<uint64_t>(this->outprize_remote_id_ & 0x7FF) << 24) |
+                                (source_low24 & 0xFFFFFFULL);
+  const TxFrameMode modes[] = {TxFrameMode::MSB_NORMAL, TxFrameMode::LSB_NORMAL,
+                               TxFrameMode::MSB_INVERTED, TxFrameMode::LSB_INVERTED};
+  int32_t best_score = -1000000;
+  uint16_t best_start = 0;
+  TxFrameMode best_mode = TxFrameMode::MSB_NORMAL;
+  uint32_t best_pulse_sum = 0, best_short_sum = 0, best_long_sum = 0;
+  uint16_t best_pulse_count = 0, best_short_count = 0, best_long_count = 0;
+
+  const uint16_t required = OUTPRIZE_TX_BITS * 2;
+  for (uint16_t start = 0; start + required <= this->srx882_edge_count_; start++) {
+    for (TxFrameMode mode : modes) {
+      int32_t score = 0;
+      uint32_t pulse_sum = 0, short_sum = 0, long_sum = 0;
+      uint16_t pulse_count = 0, short_count = 0, long_count = 0;
+      for (uint8_t bit = 0; bit < OUTPRIZE_TX_BITS; bit++) {
+        const uint16_t pulse = this->srx882_edges_[start + bit * 2];
+        const uint16_t gap = this->srx882_edges_[start + bit * 2 + 1];
+        const bool one = this->outprize_template_bit_(source_frame, bit, mode);
+        const bool pulse_ok = pulse >= 350 && pulse <= 750;
+        const bool gap_ok = one ? (gap >= 1050 && gap <= 1900) : (gap >= 300 && gap <= 800);
+        score += pulse_ok ? 12 : -20;
+        score += gap_ok ? 18 : -28;
+        if (pulse_ok) { pulse_sum += pulse; pulse_count++; }
+        if (gap_ok) {
+          if (one) { long_sum += gap; long_count++; }
+          else { short_sum += gap; short_count++; }
+        }
+      }
+      // Favor an intact header/trailer around the 70 data edges rather than a clipped alignment.
+      if (start >= 2) score += 20;
+      if (start + required < this->srx882_edge_count_) score += 10;
+      if (score > best_score) {
+        best_score = score;
+        best_start = start;
+        best_mode = mode;
+        best_pulse_sum = pulse_sum; best_short_sum = short_sum; best_long_sum = long_sum;
+        best_pulse_count = pulse_count; best_short_count = short_count; best_long_count = long_count;
+      }
+    }
+  }
+
+  if (best_score < 700 || best_pulse_count < 28 || best_short_count == 0 || best_long_count == 0) {
+    ESP_LOGW(TAG, "OUTPRIZE_TEMPLATE no credible 35-bit alignment score=%ld pulse=%u short=%u long=%u",
+             static_cast<long>(best_score), best_pulse_count, best_short_count, best_long_count);
+    snprintf(this->outprize_template_summary_, sizeof(this->outprize_template_summary_),
+             "Analyze failed | score=%ld", static_cast<long>(best_score));
+    return false;
+  }
+
+  this->outprize_template_data_start_ = best_start;
+  this->outprize_template_mode_ = best_mode;
+  this->outprize_template_pulse_us_ = best_pulse_sum / best_pulse_count;
+  this->outprize_template_short_gap_us_ = best_short_sum / best_short_count;
+  this->outprize_template_long_gap_us_ = best_long_sum / best_long_count;
+  this->outprize_template_source_low24_ = source_low24 & 0xFFFFFFUL;
+  this->outprize_template_score_ = static_cast<uint16_t>(best_score > 65535 ? 65535 : best_score);
+  this->outprize_template_valid_ = true;
+
+  const char *mode_name = "MSB_NORMAL";
+  if (best_mode == TxFrameMode::LSB_NORMAL) mode_name = "LSB_NORMAL";
+  else if (best_mode == TxFrameMode::MSB_INVERTED) mode_name = "MSB_INVERTED";
+  else if (best_mode == TxFrameMode::LSB_INVERTED) mode_name = "LSB_INVERTED";
+  snprintf(this->outprize_template_summary_, sizeof(this->outprize_template_summary_),
+           "Ready | start=%u mode=%s pulse=%u short=%u long=%u score=%u",
+           best_start, mode_name, this->outprize_template_pulse_us_,
+           this->outprize_template_short_gap_us_, this->outprize_template_long_gap_us_,
+           this->outprize_template_score_);
+  ESP_LOGI(TAG, "===== OUTPRIZE_TEMPLATE_ANALYSIS =====");
+  ESP_LOGI(TAG, "source full35=0x%09llX low24=0x%06X recording_edges=%u",
+           static_cast<unsigned long long>(source_frame), source_low24 & 0xFFFFFFUL,
+           this->srx882_edge_count_);
+  ESP_LOGI(TAG, "alignment start=%u data_edges=%u header_edges=%u trailer_edges=%u mode=%s score=%ld",
+           best_start, required, best_start, this->srx882_edge_count_ - best_start - required,
+           mode_name, static_cast<long>(best_score));
+  ESP_LOGI(TAG, "timing mean pulse=%u us short_gap=%u us long_gap=%u us counts[pulse=%u short=%u long=%u]",
+           this->outprize_template_pulse_us_, this->outprize_template_short_gap_us_,
+           this->outprize_template_long_gap_us_, best_pulse_count, best_short_count, best_long_count);
+  for (uint8_t bit = 0; bit < OUTPRIZE_TX_BITS; bit++) {
+    const bool one = this->outprize_template_bit_(source_frame, bit, best_mode);
+    const uint16_t pulse = this->srx882_edges_[best_start + bit * 2];
+    const uint16_t gap = this->srx882_edges_[best_start + bit * 2 + 1];
+    ESP_LOGI(TAG, "  bit[%02u]=%u pulse=%u gap=%u class=%s", bit, one ? 1 : 0,
+             pulse, gap, one ? "LONG" : "SHORT");
+  }
+  ESP_LOGI(TAG, "=====================================");
+  return true;
+}
+
+bool RFBridgeComponent::replay_manufactured_outprize_low24(uint32_t low24, uint8_t repeats) {
+  if (!this->outprize_template_valid_ || !this->srx882_capture_valid_) {
+    ESP_LOGW(TAG, "OUTPRIZE_MANUFACTURE blocked; record and analyze a known Power Off burst first");
+    return false;
+  }
+  const uint16_t required = OUTPRIZE_TX_BITS * 2;
+  if (this->outprize_template_data_start_ + required > this->srx882_edge_count_) {
+    ESP_LOGE(TAG, "OUTPRIZE_MANUFACTURE template bounds invalid start=%u edges=%u",
+             this->outprize_template_data_start_, this->srx882_edge_count_);
+    return false;
+  }
+
+  const uint64_t frame = (static_cast<uint64_t>(this->outprize_remote_id_ & 0x7FF) << 24) |
+                         (low24 & 0xFFFFFFULL);
+  uint16_t original_gaps[OUTPRIZE_TX_BITS]{};
+  uint32_t changed = 0;
+  for (uint8_t bit = 0; bit < OUTPRIZE_TX_BITS; bit++) {
+    const uint16_t pulse_index = this->outprize_template_data_start_ + bit * 2;
+    const uint16_t gap_index = pulse_index + 1;
+    original_gaps[bit] = this->srx882_edges_[gap_index];
+    const bool one = this->outprize_template_bit_(frame, bit, this->outprize_template_mode_);
+    // Preserve the accepted waveform's header, trailer, output levels and individual pulse widths.
+    // Manufacture only the logical symbol gap for each state bit.
+    const uint16_t replacement = one ? this->outprize_template_long_gap_us_
+                                     : this->outprize_template_short_gap_us_;
+    if (this->srx882_edges_[gap_index] != replacement) changed++;
+    this->srx882_edges_[gap_index] = replacement;
+  }
+  uint32_t duration = 0;
+  for (uint16_t i = 0; i < this->srx882_edge_count_; i++) duration += this->srx882_edges_[i];
+  ESP_LOGI(TAG, "OUTPRIZE_MANUFACTURE TX full35=0x%09llX low24=0x%06X edges=%u duration=%u us changed_gaps=%u template_recording=%u",
+           static_cast<unsigned long long>(frame), low24 & 0xFFFFFFUL, this->srx882_edge_count_,
+           static_cast<unsigned>(duration), static_cast<unsigned>(changed),
+           static_cast<unsigned>(this->rf_recording_number_));
+  const bool ok = this->transmit_raw_edge_capture_stx882_(this->srx882_edges_, this->srx882_levels_,
+                                                          this->srx882_edge_count_,
+                                                          this->srx882_initial_level_, repeats,
+                                                          "OUTPRIZE_MANUFACTURED");
+  // The original accepted recording remains the immutable reference template.
+  for (uint8_t bit = 0; bit < OUTPRIZE_TX_BITS; bit++) {
+    const uint16_t gap_index = this->outprize_template_data_start_ + bit * 2 + 1;
+    this->srx882_edges_[gap_index] = original_gaps[bit];
+  }
+  return ok;
+}
+
+bool RFBridgeComponent::replay_manufactured_outprize(uint8_t speed_percent, OutprizeDirection direction,
+                                                      bool rain_enabled, OutprizeVentCommand vent_command,
+                                                      uint8_t repeats) {
+  return this->replay_manufactured_outprize_low24(
+      this->encode_outprize_low24(speed_percent, direction, rain_enabled, vent_command), repeats);
+}
+
+std::string RFBridgeComponent::get_outprize_template_summary() const {
+  return std::string(this->outprize_template_summary_);
+}
+
 }  // namespace rfbridge
 }  // namespace esphome

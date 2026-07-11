@@ -135,6 +135,17 @@ class RFBridgeComponent : public Component {
   std::string get_rf_recorder_status() const;
   std::string get_rf_recording_summary() const;
 
+  // v1.3.27: use a known-good SRX882 recording as an RF-envelope template,
+  // identify the embedded 35-bit Outprize payload, and manufacture new full-state
+  // commands while preserving the accepted header, pulse widths, polarity, and trailer.
+  bool analyze_rf_recording_outprize(uint32_t source_low24 = 0x600000);
+  bool replay_manufactured_outprize_low24(uint32_t low24, uint8_t repeats = 1);
+  bool replay_manufactured_outprize(uint8_t speed_percent, OutprizeDirection direction,
+                                    bool rain_enabled, OutprizeVentCommand vent_command,
+                                    uint8_t repeats = 1);
+  bool has_outprize_template() const { return this->outprize_template_valid_; }
+  std::string get_outprize_template_summary() const;
+
  protected:
   GPIOPin *cs_pin_{nullptr};
   GPIOPin *sck_pin_{nullptr};
@@ -352,6 +363,19 @@ class RFBridgeComponent : public Component {
   char srx882_summary_[128]{"No SRX882 capture"};
   char rf_recorder_status_[64]{"Ready"};
   uint32_t rf_recording_number_{0};
+
+  bool outprize_template_valid_{false};
+  uint16_t outprize_template_data_start_{0};
+  TxFrameMode outprize_template_mode_{TxFrameMode::MSB_NORMAL};
+  uint16_t outprize_template_pulse_us_{0};
+  uint16_t outprize_template_short_gap_us_{0};
+  uint16_t outprize_template_long_gap_us_{0};
+  uint32_t outprize_template_source_low24_{0};
+  uint16_t outprize_template_score_{0};
+  char outprize_template_summary_[160]{"No Outprize waveform template"};
+
+  bool outprize_template_bit_(uint64_t frame, uint8_t bit_index, TxFrameMode mode) const;
+  void log_rf_recording_edges_() const;
 
   bool tx_carrier_active_{false};
   uint32_t tx_carrier_started_ms_{0};

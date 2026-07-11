@@ -89,3 +89,23 @@ text_sensor:
     update_interval: 1s
     lambda: |-
       return id(rf_bridge).get_rf_recording_summary();
+
+# v1.3.27 diagnostic controls (merge under your existing sections)
+# button:
+#   - platform: template
+#     name: "Outprize Analyze Recorded Power Off"
+#     on_press:
+#       - lambda: id(rf_bridge).analyze_rf_recording_outprize(0x600000);
+#   - platform: template
+#     name: "Outprize Manufacture Power Off"
+#     on_press:
+#       - lambda: id(rf_bridge).replay_manufactured_outprize_low24(0x600000, 1);
+#   - platform: template
+#     name: "Outprize Manufacture 10 Percent OUT"
+#     on_press:
+#       - lambda: id(rf_bridge).replay_manufactured_outprize(10, rfbridge::OutprizeDirection::OUT, false, rfbridge::OutprizeVentCommand::NONE, 1);
+# text_sensor:
+#   - platform: template
+#     name: "Outprize Waveform Template"
+#     update_interval: 1s
+#     lambda: return id(rf_bridge).get_outprize_template_summary();
