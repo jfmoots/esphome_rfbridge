@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.4.1
+
+- Adds explicit logging of every complete-state API request and the resulting Low24 value.
+- Normalizes requested speed to the nearest supported 10% step before encoding.
+- Documents and warns that the vent field is a transient command nibble, not a persistent vent-state value.
+- Warns when a powered-on complete-state request includes Vent Close (`0x04`) or Vent Stop (`0x0C`), because those actions can make the fan appear to power off.
+- Keeps the verified power behavior: `powered: false` sends dedicated Power Off (`0x600000`); `powered: true` manufactures the requested awake/full-state frame.
+- Updates the matching test procedure to use `vent_command: 0` for fan-only tests and `vent_command: 8` when explicitly opening the vent.
+
 ## v1.4.0
 
 - Discards the experimental v1.3.29 native ESPHome fan/cover entity approach.

@@ -160,7 +160,7 @@ class RFBridgeComponent : public Component {
   bool has_outprize_template() const { return this->outprize_template_valid_; }
   std::string get_outprize_template_summary() const;
 
-  // v1.4.0 stable state/transport contract. No ESPHome fan/cover entities live here.
+  // v1.4.x stable state/transport contract. No ESPHome fan/cover entities live here.
   bool set_outprize_complete_state(bool powered, uint8_t speed_percent, OutprizeDirection direction,
                                     bool rain_enabled, OutprizeVentCommand vent_command, uint8_t repeats = 1);
   bool set_outprize_power(bool powered, uint8_t repeats = 1);

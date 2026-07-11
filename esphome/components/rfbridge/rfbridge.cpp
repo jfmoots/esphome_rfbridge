@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "rfbridge.h"
 #include "cc1101_regs.h"
 #include "version.h"
@@ -2929,7 +2930,28 @@ bool RFBridgeComponent::transmit_cached_state_(uint8_t repeats) {
 
 bool RFBridgeComponent::set_outprize_complete_state(bool powered, uint8_t speed_percent, OutprizeDirection direction,
                                                      bool rain_enabled, OutprizeVentCommand vent_command, uint8_t repeats) {
-  uint32_t low24 = powered ? this->encode_outprize_low24(speed_percent, direction, rain_enabled, vent_command) : 0x600000UL;
+  // POWER OFF is the dedicated 0x600000 command.  For an awake/on state,
+  // manufacture the complete state packet.  The vent nibble is a transient
+  // action: CLOSE (0x04), OPEN (0x08), STOP (0x0C), or NONE (0x00).
+  const uint8_t normalized_speed = static_cast<uint8_t>(std::min<uint16_t>(100, ((speed_percent + 5) / 10) * 10));
+  const uint32_t low24 = powered
+      ? this->encode_outprize_low24(normalized_speed, direction, rain_enabled, vent_command)
+      : 0x600000UL;
+
+  ESP_LOGI(TAG,
+           "OUTPRIZE_API complete powered=%s speed_requested=%u speed_encoded=%u direction=%s rain=%s "
+           "vent=0x%02X -> low24=0x%06X",
+           YESNO(powered), speed_percent, normalized_speed,
+           direction == OutprizeDirection::IN ? "IN" : "OUT", YESNO(rain_enabled),
+           static_cast<uint8_t>(vent_command), low24);
+
+  if (powered && (vent_command == OutprizeVentCommand::CLOSE || vent_command == OutprizeVentCommand::STOP)) {
+    ESP_LOGW(TAG,
+             "OUTPRIZE_API powered=true with vent command 0x%02X: this is a vent action and may stop/close the fan. "
+             "Use vent_command=0 for a fan-speed-only command or 8 to open the vent.",
+             static_cast<uint8_t>(vent_command));
+  }
+
   this->update_outprize_state_from_low24_(low24, OutprizeCommandSource::HOME_ASSISTANT);
   return this->transmit_cached_state_(repeats);
 }

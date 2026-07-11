@@ -1,4 +1,4 @@
-# RF Bridge v1.4.0 transport/API example.
+# RF Bridge v1.4.1 transport/API example.
 # The ESP exposes a stable command/state contract; the future HA integration owns fan/cover entities.
 
 rfbridge:
@@ -23,6 +23,7 @@ api:
         speed_percent: int
         direction_in: bool
         rain_enabled: bool
+        # Transient action nibble: 0=none, 4=close, 8=open, 12=stop.
         vent_command: int
       then:
         - lambda: |-
