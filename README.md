@@ -1,6 +1,6 @@
-# ESPHome RF Bridge v1.5.0
+# ESPHome RF Bridge v1.5.1
 
-v1.5.0 introduces the codec-oriented RF Bridge architecture while preserving the proven v1.4.1 Outprize API and RF behavior.
+v1.5.1 introduces the codec-oriented RF Bridge architecture while preserving the proven v1.4.1 Outprize API and RF behavior.
 
 ## Architecture
 

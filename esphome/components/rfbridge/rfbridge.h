@@ -9,7 +9,7 @@
 #include "esphome/core/automation.h"
 #include "esphome/core/helpers.h"
 #include "codec.h"
-#include "codecs/outprize/outprize_codec.h"
+#include "outprize_codec.h"
 
 namespace esphome {
 namespace rfbridge {

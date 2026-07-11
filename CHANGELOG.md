@@ -1,6 +1,14 @@
 # Changelog
 
-## v1.5.0 — Codec Architecture Foundation
+
+## v1.5.1 – ESPHome Codec Source Packaging Fix
+
+- Fixes ESPHome compilation failure caused by nested codec source files not being copied into the generated component source tree.
+- Moves the Outprize codec implementation to the RF Bridge component root while preserving the codec abstraction and behavior.
+- Updates include paths so `outprize_codec.h` and `outprize_codec.cpp` are compiled by ESPHome.
+- No YAML or runtime behavior changes from v1.5.0.
+
+## v1.5.1 — Codec Architecture Foundation
 
 - Adds a generic `RFBridgeCodec` interface.
 - Adds the first compartmentalized codec module: `codecs/outprize`.
