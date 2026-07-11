@@ -121,3 +121,30 @@ text_sensor:
     name: "RF Bridge Capabilities"
     update_interval: 10s
     lambda: return id(rf_bridge).get_bridge_capabilities();
+
+# v1.5.5 discovery event example:
+# Add under the rfbridge block:
+#   on_outprize_frame:
+#     then:
+#       - homeassistant.event:
+#           event: esphome.rfbridge_outprize_frame
+#           data:
+#             bridge_id: esphome-web-bafaac
+#           data_template:
+#             remote_id: "{{ rf_remote_id }}"
+#             low24: "{{ rf_low24 }}"
+#             powered: "{{ rf_powered }}"
+#             speed_percent: "{{ rf_speed_percent }}"
+#             direction_in: "{{ rf_direction_in }}"
+#             rain_enabled: "{{ rf_rain_enabled }}"
+#             vent_command: "{{ rf_vent_command }}"
+#             rssi_dbm: "{{ rf_rssi_dbm }}"
+#           variables:
+#             rf_remote_id: !lambda return remote_id;
+#             rf_low24: !lambda return low24;
+#             rf_powered: !lambda return powered;
+#             rf_speed_percent: !lambda return speed_percent;
+#             rf_direction_in: !lambda return direction_in;
+#             rf_rain_enabled: !lambda return rain_enabled;
+#             rf_vent_command: !lambda return vent_command;
+#             rf_rssi_dbm: !lambda return rssi_dbm;

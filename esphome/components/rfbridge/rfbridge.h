@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <string>
 
 #include "esphome/core/component.h"
@@ -15,6 +16,17 @@ namespace esphome {
 namespace rfbridge {
 
 enum class OutprizeCommandSource : uint8_t { UNKNOWN = 0, HOME_ASSISTANT = 1, OEM_REMOTE = 2, RESTORED = 3 };
+
+struct OutprizeFrameEvent {
+  uint16_t remote_id{0};
+  uint32_t low24{0};
+  bool powered{false};
+  uint8_t speed_percent{0};
+  bool direction_in{false};
+  bool rain_enabled{false};
+  uint8_t vent_command{0};
+  int16_t rssi_dbm{-127};
+};
 
 struct OutprizeState {
   bool valid{false};
@@ -151,6 +163,18 @@ class RFBridgeComponent : public Component {
   bool has_outprize_template() const { return this->outprize_template_valid_; }
   std::string get_outprize_template_summary() const;
 
+  // v1.5.5 generic decoded-frame transport. Every complete valid Outprize
+  // frame is emitted regardless of whether its remote ID matches the legacy
+  // single-remote diagnostic cache. Home Assistant owns discovery and routing.
+  void add_on_outprize_frame_callback(std::function<void(uint32_t, uint32_t, bool, uint8_t, bool, bool, uint8_t, int16_t)> &&callback) {
+    this->outprize_frame_callback_.add(std::move(callback));
+  }
+
+  // Stateless addressed transmit path for integrations managing multiple remotes.
+  bool send_outprize_complete_state(uint32_t remote_id, bool powered, uint8_t speed_percent,
+                                     OutprizeDirection direction, bool rain_enabled,
+                                     OutprizeVentCommand vent_command, uint8_t repeats = 1);
+
   // v1.4.x stable state/transport contract. No ESPHome fan/cover entities live here.
   bool set_outprize_complete_state(bool powered, uint8_t speed_percent, OutprizeDirection direction,
                                     bool rain_enabled, OutprizeVentCommand vent_command, uint8_t repeats = 1);
@@ -190,6 +214,7 @@ class RFBridgeComponent : public Component {
 
   OutprizeState outprize_state_{};
   OutprizeCodec outprize_codec_;
+  CallbackManager<void(uint32_t, uint32_t, bool, uint8_t, bool, bool, uint8_t, int16_t)> outprize_frame_callback_;
   uint32_t suppress_oem_until_ms_{0};
   void update_outprize_state_from_low24_(uint32_t low24, OutprizeCommandSource source);
   uint8_t decode_outprize_speed_(uint32_t low24) const;
@@ -421,6 +446,19 @@ class RFBridgeComponent : public Component {
 
 };
 
+
+class OutprizeFrameTrigger
+    : public Trigger<uint32_t, uint32_t, bool, uint8_t, bool, bool, uint8_t, int16_t> {
+ public:
+  explicit OutprizeFrameTrigger(RFBridgeComponent *parent) {
+    parent->add_on_outprize_frame_callback(
+        [this](uint32_t remote_id, uint32_t low24, bool powered, uint8_t speed_percent,
+               bool direction_in, bool rain_enabled, uint8_t vent_command, int16_t rssi_dbm) {
+          this->trigger(remote_id, low24, powered, speed_percent, direction_in,
+                        rain_enabled, vent_command, rssi_dbm);
+        });
+  }
+};
 
 template<typename... Ts> class SendOutprizeLow24Action : public Action<Ts...>, public Parented<RFBridgeComponent> {
  public:

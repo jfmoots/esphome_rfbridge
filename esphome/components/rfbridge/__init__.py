@@ -1,7 +1,7 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import pins, automation
-from esphome.const import CONF_ID
+from esphome.const import CONF_ID, CONF_TRIGGER_ID
 
 CONF_CS_PIN = "cs_pin"
 CONF_SCK_PIN = "sck_pin"
@@ -16,12 +16,17 @@ CONF_DIAGNOSTIC_LOGGING = "diagnostic_logging"
 CONF_LOW24 = "low24"
 CONF_REMOTE_ID = "remote_id"
 CONF_REPEATS = "repeats"
+CONF_ON_OUTPRIZE_FRAME = "on_outprize_frame"
 
 rfbridge_ns = cg.esphome_ns.namespace("rfbridge")
 RFBridgeComponent = rfbridge_ns.class_("RFBridgeComponent", cg.Component)
 SendOutprizeLow24Action = rfbridge_ns.class_("SendOutprizeLow24Action", automation.Action)
 SendOutprizePowerOffAction = rfbridge_ns.class_("SendOutprizePowerOffAction", automation.Action)
 SendOutprizeFanOffAction = rfbridge_ns.class_("SendOutprizeFanOffAction", automation.Action)
+OutprizeFrameTrigger = rfbridge_ns.class_(
+    "OutprizeFrameTrigger",
+    automation.Trigger.template(cg.uint32, cg.uint32, cg.bool_, cg.uint8, cg.bool_, cg.bool_, cg.uint8, cg.int16),
+)
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -37,6 +42,11 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_SRX882_ENABLE_PIN): pins.gpio_output_pin_schema,
         cv.Optional(CONF_DIAGNOSTIC_LOGGING, default=False): cv.boolean,
         cv.Optional(CONF_REMOTE_ID, default=0x6CF): cv.hex_uint32_t,
+        cv.Optional(CONF_ON_OUTPRIZE_FRAME): automation.validate_automation(
+            {
+                cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(OutprizeFrameTrigger),
+            }
+        ),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -67,6 +77,23 @@ async def to_code(config):
 
     cg.add(var.set_diagnostic_logging(config[CONF_DIAGNOSTIC_LOGGING]))
     cg.add(var.set_outprize_remote_id(config[CONF_REMOTE_ID]))
+
+    for conf in config.get(CONF_ON_OUTPRIZE_FRAME, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(
+            trigger,
+            [
+                (cg.uint32, "remote_id"),
+                (cg.uint32, "low24"),
+                (cg.bool_, "powered"),
+                (cg.uint8, "speed_percent"),
+                (cg.bool_, "direction_in"),
+                (cg.bool_, "rain_enabled"),
+                (cg.uint8, "vent_command"),
+                (cg.int16, "rssi_dbm"),
+            ],
+            conf,
+        )
 
 
 OUTPRIZE_ACTION_BASE_SCHEMA = cv.Schema(

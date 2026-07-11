@@ -1148,9 +1148,24 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
              this->outprize_learned_bits_, this->outprize_learned_score_, this->outprize_learned_binary_);
   }
 
-  if (best.valid && best.bit_count >= OUTPRIZE_TX_BITS && best.remote_id == (this->outprize_remote_id_ & 0x7FF) &&
-      millis() >= this->suppress_oem_until_ms_) {
-    this->update_outprize_state_from_low24_(best.low24, OutprizeCommandSource::OEM_REMOTE);
+  if (best.valid && best.bit_count >= OUTPRIZE_TX_BITS && millis() >= this->suppress_oem_until_ms_) {
+    const uint32_t low24 = best.low24 & 0xFFFFFFUL;
+    const bool powered = low24 != 0x600000UL;
+    const uint8_t speed_percent = this->decode_outprize_speed_(low24);
+    const bool direction_in = (low24 & 0x20) != 0;
+    const bool rain_enabled = (low24 & 0x10) != 0;
+    const uint8_t vent_command = static_cast<uint8_t>(low24 & 0x0C);
+
+    // Emit every complete valid frame for discovery and multi-remote routing.
+    this->outprize_frame_callback_.call(best.remote_id & 0x7FF, low24, powered, speed_percent,
+                                        direction_in, rain_enabled, vent_command,
+                                        this->rx_last_trigger_rssi_dbm_);
+
+    // Preserve the legacy single-remote diagnostic cache until the HA integration
+    // replaces the temporary ESPHome sensors.
+    if (best.remote_id == (this->outprize_remote_id_ & 0x7FF)) {
+      this->update_outprize_state_from_low24_(low24, OutprizeCommandSource::OEM_REMOTE);
+    }
   }
 
   if (!this->diagnostic_logging_) {
@@ -2906,6 +2921,26 @@ bool RFBridgeComponent::transmit_cached_state_(uint8_t repeats) {
   if (!this->outprize_state_.valid) this->update_outprize_state_from_low24_(0x600040, OutprizeCommandSource::HOME_ASSISTANT);
   this->suppress_oem_until_ms_ = millis() + 300;
   return this->replay_manufactured_outprize_low24(this->outprize_state_.low24, repeats);
+}
+
+bool RFBridgeComponent::send_outprize_complete_state(uint32_t remote_id, bool powered, uint8_t speed_percent,
+                                                        OutprizeDirection direction, bool rain_enabled,
+                                                        OutprizeVentCommand vent_command, uint8_t repeats) {
+  const uint8_t normalized_speed =
+      static_cast<uint8_t>(std::min<uint16_t>(100, ((speed_percent + 5) / 10) * 10));
+  const uint32_t low24 = powered
+      ? this->encode_outprize_low24(normalized_speed, direction, rain_enabled, vent_command)
+      : 0x600000UL;
+
+  ESP_LOGI(TAG,
+           "OUTPRIZE_API addressed remote=0x%03X powered=%s speed_requested=%u speed_encoded=%u "
+           "direction=%s rain=%s vent=0x%02X -> low24=0x%06X",
+           remote_id & 0x7FF, YESNO(powered), speed_percent, normalized_speed,
+           direction == OutprizeDirection::IN ? "IN" : "OUT", YESNO(rain_enabled),
+           static_cast<uint8_t>(vent_command), low24);
+
+  this->suppress_oem_until_ms_ = millis() + 300;
+  return this->send_outprize_low24(remote_id & 0x7FF, low24, repeats);
 }
 
 bool RFBridgeComponent::set_outprize_complete_state(bool powered, uint8_t speed_percent, OutprizeDirection direction,
