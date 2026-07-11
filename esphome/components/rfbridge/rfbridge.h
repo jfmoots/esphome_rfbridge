@@ -14,18 +14,6 @@
 namespace esphome {
 namespace rfbridge {
 
-enum class OutprizeDirection : uint8_t {
-  OUT = 0,
-  IN = 1,
-};
-
-enum class OutprizeVentCommand : uint8_t {
-  NONE = 0x00,
-  CLOSE = 0x04,
-  OPEN = 0x08,
-  STOP = 0x0C,
-};
-
 enum class OutprizeCommandSource : uint8_t { UNKNOWN = 0, HOME_ASSISTANT = 1, OEM_REMOTE = 2, RESTORED = 3 };
 
 struct OutprizeState {
@@ -42,7 +30,7 @@ struct OutprizeState {
 
 class RFBridgeComponent : public Component {
  public:
-  RFBridgeComponent() : outprize_codec_(this) {}
+  RFBridgeComponent() = default;
   void setup() override;
   void loop() override;
   void dump_config() override;

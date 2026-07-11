@@ -2,7 +2,6 @@
 #include "rfbridge.h"
 #include "cc1101_regs.h"
 #include "version.h"
-#include "outprize_codec_impl.h"
 #include "esphome/core/log.h"
 #include <cstdio>
 
@@ -1257,16 +1256,7 @@ uint32_t RFBridgeComponent::outprize_speed_base_(uint8_t speed_percent) const {
 
 uint32_t RFBridgeComponent::encode_outprize_low24(uint8_t speed_percent, OutprizeDirection direction,
                                                   bool rain_enabled, OutprizeVentCommand vent_command) const {
-  uint32_t low24 = 0x600000;
-  low24 |= this->outprize_speed_base_(speed_percent);
-  if (direction == OutprizeDirection::IN) {
-    low24 |= 0x20;
-  }
-  if (rain_enabled) {
-    low24 |= 0x10;
-  }
-  low24 |= static_cast<uint8_t>(vent_command) & 0x0C;
-  return low24 & 0xFFFFFF;
+  return this->outprize_codec_.encode_low24(speed_percent, direction, rain_enabled, vent_command);
 }
 
 bool RFBridgeComponent::send_outprize(uint8_t speed_percent, OutprizeDirection direction, bool rain_enabled,
@@ -2891,21 +2881,7 @@ std::string RFBridgeComponent::get_outprize_template_summary() const {
 
 
 uint8_t RFBridgeComponent::decode_outprize_speed_(uint32_t low24) const {
-  const uint32_t code = low24 & 0x7C0;
-  switch (code) {
-    case 0x040: return 0;
-    case 0x440: return 10;
-    case 0x240: return 20;
-    case 0x640: return 30;
-    case 0x140: return 40;
-    case 0x540: return 50;
-    case 0x340: return 60;
-    case 0x740: return 70;
-    case 0x0C0: return 80;
-    case 0x4C0: return 90;
-    case 0x2C0: return 100;
-    default: return 0;
-  }
+  return this->outprize_codec_.decode_speed(low24);
 }
 
 void RFBridgeComponent::update_outprize_state_from_low24_(uint32_t low24, OutprizeCommandSource source) {

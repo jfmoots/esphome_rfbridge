@@ -68,3 +68,8 @@ The ESP does not create fan, cover, rain, tire, or other product-specific entiti
 ## Compatibility
 
 v1.5.2 keeps the v1.4.1 Outprize API contract while moving toward codec-based discovery and events. This lets the HA integration be built before removing temporary test surfaces.
+
+
+## v1.5.3 codec boundary
+
+Codecs are pure protocol libraries. They do not hold an `RFBridgeComponent` pointer and do not perform radio I/O. A codec accepts protocol values or captures and returns encoded/decoded protocol data. The bridge owns backend selection, capture, transmission, event routing, and ESPHome transport. This avoids circular dependencies and keeps codecs reusable.

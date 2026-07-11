@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.5.3 — Pure Codec Boundary Fix
+
+- Rebuilds `OutprizeCodec` as a pure protocol library with no pointer or callback into `RFBridgeComponent`.
+- Removes the circular Bridge → Codec → Bridge dependency that caused the v1.5.2 compile failure.
+- Moves Outprize direction and vent command types into the codec module.
+- Moves speed normalization, Gray-code speed mapping, Low24 encoding, and speed decoding into the codec.
+- Keeps radio capture, transmit routing, state caching, diagnostics, and ESPHome APIs in the bridge layer.
+- Keeps the proven CC1101 receive and STX882 transmit behavior unchanged.
+- No YAML changes from v1.5.0.
+
+
 ## v1.5.2 – ESPHome Codec Link Fix
 
 - Fixes linker errors for `OutprizeCodec::capability_summary()` and the `OutprizeCodec` vtable.
