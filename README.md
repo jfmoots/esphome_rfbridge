@@ -1,67 +1,19 @@
-# RF Bridge v1.5.5
+# ESPHome RF Bridge v1.5.6
 
-RF Bridge is an extensible ESPHome RF middleware component. Protocol codecs decode and encode RF protocols while the bridge owns the radios, routing, diagnostics, and transport.
+## Addressed STX882 routing fix
 
-## Installed codec
+v1.5.6 fixes the addressed Outprize command path introduced in v1.5.5. The
+multi-remote `outprize_send_complete_state` API now uses the same canonical
+waveform generator and discrete STX882 transmitter path already proven by the
+single-remote API.
 
-- `outprize:v1`
-  - RX: CC1101
-  - TX: STX882
-  - Diagnostic RX: SRX882
+The supplied remote ID is embedded in the 35-bit Outprize frame; it no longer
+falls through to the legacy CC1101 asynchronous transmit path.
 
-## New in v1.5.5
+## YAML
 
-The bridge now emits every complete, valid Outprize frame through `on_outprize_frame`, regardless of the remote ID configured for the temporary single-remote diagnostic cache. This provides the discovery/event path required by `ha_outprize`.
-
-The bridge also provides a stateless addressed transmit method so a Home Assistant integration can send a full state to any discovered Outprize remote ID without changing ESPHome YAML.
-
-## RF Bridge configuration
-
-```yaml
-rfbridge:
-  id: rf_bridge
-  cs_pin: GPIO5
-  sck_pin: GPIO18
-  mosi_pin: GPIO23
-  miso_pin: GPIO19
-  gdo0_pin: GPIO4
-  gdo2_pin: GPIO27
-  stx882_data_pin: GPIO26
-  srx882_data_pin: GPIO25
-  srx882_enable_pin: GPIO33
-  diagnostic_logging: false
-
-  on_outprize_frame:
-    then:
-      - homeassistant.event:
-          event: esphome.rfbridge_outprize_frame
-          data:
-            bridge_id: esphome-web-bafaac
-          data_template:
-            remote_id: "{{ rf_remote_id }}"
-            low24: "{{ rf_low24 }}"
-            powered: "{{ rf_powered }}"
-            speed_percent: "{{ rf_speed_percent }}"
-            direction_in: "{{ rf_direction_in }}"
-            rain_enabled: "{{ rf_rain_enabled }}"
-            vent_command: "{{ rf_vent_command }}"
-            rssi_dbm: "{{ rf_rssi_dbm }}"
-          variables:
-            rf_remote_id: !lambda return remote_id;
-            rf_low24: !lambda return low24;
-            rf_powered: !lambda return powered;
-            rf_speed_percent: !lambda return speed_percent;
-            rf_direction_in: !lambda return direction_in;
-            rf_rain_enabled: !lambda return rain_enabled;
-            rf_vent_command: !lambda return vent_command;
-            rf_rssi_dbm: !lambda return rssi_dbm;
-```
-
-Home Assistant must allow this ESPHome device to perform Home Assistant actions so it can fire the event.
-
-## Addressed API action
-
-Merge this action into the existing `api: actions:` list:
+No YAML changes are required from v1.5.5. Keep the existing
+`on_outprize_frame` trigger and the existing addressed API action:
 
 ```yaml
     - action: outprize_send_complete_state
@@ -86,4 +38,18 @@ Merge this action into the existing `api: actions:` list:
               1);
 ```
 
-The existing v1.4.1/v1.5.4 diagnostic actions and sensors remain compatible.
+## Direct test
+
+```yaml
+action: esphome.esphome_web_bafaac_outprize_send_complete_state
+data:
+  remote_id: 1743
+  powered: true
+  speed_percent: 40
+  direction_in: false
+  rain_enabled: false
+  vent_command: 8
+```
+
+Expected log markers include `codec=outprize`, `tx_backend=stx882`, and
+`OUTPRIZE_BUILTIN TX full35=0x6CF...`.

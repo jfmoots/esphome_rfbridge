@@ -157,6 +157,7 @@ class RFBridgeComponent : public Component {
   // commands while preserving the accepted header, pulse widths, polarity, and trailer.
   bool analyze_rf_recording_outprize(uint32_t source_low24 = 0x600000);
   bool replay_manufactured_outprize_low24(uint32_t low24, uint8_t repeats = 1);
+  bool replay_manufactured_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats);
   bool replay_manufactured_outprize(uint8_t speed_percent, OutprizeDirection direction,
                                     bool rain_enabled, OutprizeVentCommand vent_command,
                                     uint8_t repeats = 1);

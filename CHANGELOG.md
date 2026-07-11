@@ -1,12 +1,11 @@
 # Changelog
 
-## v1.5.5 — Outprize Discovery Events & Addressed Transport
+## v1.5.6 — Addressed STX882 Routing Fix
 
-- Emits every complete, valid Outprize frame through a generic `on_outprize_frame` trigger.
-- Frame events are no longer limited to the legacy YAML `remote_id` used by temporary diagnostics.
-- Event payload includes remote ID, Low24, power, speed, direction, rain, vent command, and receive RSSI.
-- Adds a stateless addressed complete-state transmit method for multi-remote Home Assistant integrations.
-- Preserves the legacy single-remote state cache and diagnostic sensors for v1.4/v1.5 testing.
-- Preserves the verified Outprize codec, CC1101 receive path, canonical waveform manufacturer, and STX882 transmit path.
-- Ignores self-reception during the existing post-transmit suppression window.
-- No native fan, cover, rain, or protocol entities are added to the ESP.
+- Fixes the v1.5.5 addressed complete-state API path used by `ha_outprize`.
+- Routes addressed Outprize commands through the same proven canonical waveform manufacturer and STX882 backend as the working single-remote API.
+- Uses the supplied 11-bit remote ID only when constructing the transmitted 35-bit frame.
+- Adds explicit logs for codec, selected TX backend, remote ID, Low24, and full35 frame.
+- Keeps Outprize discovery events and receive behavior unchanged.
+- Keeps all v1.5.4 diagnostic and single-remote APIs compatible.
+- No YAML changes from v1.5.5.

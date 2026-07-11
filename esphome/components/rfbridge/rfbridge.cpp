@@ -2840,6 +2840,10 @@ bool RFBridgeComponent::analyze_rf_recording_outprize(uint32_t source_low24) {
 }
 
 bool RFBridgeComponent::replay_manufactured_outprize_low24(uint32_t low24, uint8_t repeats) {
+  return this->replay_manufactured_outprize_low24(this->outprize_remote_id_, low24, repeats);
+}
+
+bool RFBridgeComponent::replay_manufactured_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats) {
   // v1.3.28 canonical waveform learned from the accepted SRX882/STX882 captures.
   // This is intentionally independent of recorder RAM and survives reboot/firmware updates.
   // Envelope: 8 fixed header edges followed by 35 MSB-first PWM symbols.
@@ -2851,7 +2855,8 @@ bool RFBridgeComponent::replay_manufactured_outprize_low24(uint32_t low24, uint8
   static constexpr uint16_t LONG_GAP_US = 1500;
   static constexpr uint16_t EDGE_COUNT = 8 + OUTPRIZE_TX_BITS * 2;
 
-  const uint64_t frame = (static_cast<uint64_t>(this->outprize_remote_id_ & 0x7FF) << 24) |
+  const uint32_t prefix = remote_id & 0x7FF;
+  const uint64_t frame = (static_cast<uint64_t>(prefix) << 24) |
                          (low24 & 0xFFFFFFULL);
   uint16_t edges[EDGE_COUNT]{};
   uint8_t levels[EDGE_COUNT]{};
@@ -2939,8 +2944,14 @@ bool RFBridgeComponent::send_outprize_complete_state(uint32_t remote_id, bool po
            direction == OutprizeDirection::IN ? "IN" : "OUT", YESNO(rain_enabled),
            static_cast<uint8_t>(vent_command), low24);
 
+  const uint32_t prefix = remote_id & 0x7FF;
+  ESP_LOGI(TAG,
+           "OUTPRIZE_API addressed route codec=%s tx_backend=%s remote=0x%03X full35=0x%09llX",
+           this->outprize_codec_.id(), this->outprize_codec_.tx_backend(), prefix,
+           static_cast<unsigned long long>((static_cast<uint64_t>(prefix) << 24) | (low24 & 0xFFFFFFULL)));
+
   this->suppress_oem_until_ms_ = millis() + 300;
-  return this->send_outprize_low24(remote_id & 0x7FF, low24, repeats);
+  return this->replay_manufactured_outprize_low24(prefix, low24, repeats);
 }
 
 bool RFBridgeComponent::set_outprize_complete_state(bool powered, uint8_t speed_percent, OutprizeDirection direction,
