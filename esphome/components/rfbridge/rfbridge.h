@@ -126,6 +126,15 @@ class RFBridgeComponent : public Component {
   bool has_srx882_capture() const { return this->srx882_capture_valid_; }
   std::string get_srx882_summary() const;
 
+  // v1.3.25: high-level RF recorder built on the proven SRX882 -> STX882
+  // raw edge path. Recording is explicit and never overwritten by ambient RF.
+  void start_rf_recorder(uint16_t duration_ms = 3000);
+  void clear_rf_recording();
+  bool replay_rf_recording(uint8_t repeats = 1);
+  bool has_rf_recording() const { return this->srx882_capture_valid_; }
+  std::string get_rf_recorder_status() const;
+  std::string get_rf_recording_summary() const;
+
  protected:
   GPIOPin *cs_pin_{nullptr};
   GPIOPin *sck_pin_{nullptr};
@@ -341,6 +350,8 @@ class RFBridgeComponent : public Component {
   uint16_t srx882_edges_[SRX882_MAX_EDGES]{};
   uint8_t srx882_levels_[SRX882_MAX_EDGES]{};
   char srx882_summary_[128]{"No SRX882 capture"};
+  char rf_recorder_status_[64]{"Ready"};
+  uint32_t rf_recording_number_{0};
 
   bool tx_carrier_active_{false};
   uint32_t tx_carrier_started_ms_{0};

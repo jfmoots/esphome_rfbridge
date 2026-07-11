@@ -2519,5 +2519,72 @@ std::string RFBridgeComponent::get_srx882_summary() const {
   return std::string(this->srx882_summary_);
 }
 
+void RFBridgeComponent::start_rf_recorder(uint16_t duration_ms) {
+  if (duration_ms < 500) duration_ms = 500;
+  if (duration_ms > 10000) duration_ms = 10000;
+  snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "Recording for %u ms", duration_ms);
+  ESP_LOGI(TAG, "RF RECORDER armed: capture window=%u ms; press the OEM remote now", duration_ms);
+
+  // Use the exact SRX882 raw-capture path already proven to produce a
+  // fan-accepted replay. Starting a recording deliberately replaces the
+  // previous recording; ambient RF outside this call cannot overwrite it.
+  this->capture_srx882_raw(duration_ms);
+
+  if (this->srx882_capture_valid_) {
+    this->rf_recording_number_++;
+    snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "Recorded #%u",
+             static_cast<unsigned>(this->rf_recording_number_));
+    snprintf(this->srx882_summary_, sizeof(this->srx882_summary_),
+             "Recording #%u: %u edges / %u ms",
+             static_cast<unsigned>(this->rf_recording_number_), this->srx882_edge_count_,
+             static_cast<unsigned>(this->srx882_capture_duration_us_ / 1000UL));
+    ESP_LOGI(TAG, "RF RECORDER success recording=%u edges=%u duration=%u us",
+             static_cast<unsigned>(this->rf_recording_number_), this->srx882_edge_count_,
+             static_cast<unsigned>(this->srx882_capture_duration_us_));
+  } else {
+    snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "No valid recording");
+    ESP_LOGW(TAG, "RF RECORDER finished without a valid capture");
+  }
+}
+
+void RFBridgeComponent::clear_rf_recording() {
+  this->clear_srx882_capture();
+  snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "Ready");
+  ESP_LOGI(TAG, "RF RECORDER cleared");
+}
+
+bool RFBridgeComponent::replay_rf_recording(uint8_t repeats) {
+  if (!this->srx882_capture_valid_) {
+    snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "Replay blocked: no recording");
+    ESP_LOGW(TAG, "RF RECORDER replay blocked; no valid recording");
+    return false;
+  }
+  snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "Replaying #%u",
+           static_cast<unsigned>(this->rf_recording_number_));
+  ESP_LOGI(TAG, "RF RECORDER replay start recording=%u repeats=%u",
+           static_cast<unsigned>(this->rf_recording_number_), repeats);
+  const bool ok = this->replay_srx882_capture_stx882(repeats);
+  snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_),
+           ok ? "Recorded #%u - replay OK" : "Recorded #%u - replay failed",
+           static_cast<unsigned>(this->rf_recording_number_));
+  ESP_LOGI(TAG, "RF RECORDER replay complete recording=%u ok=%s",
+           static_cast<unsigned>(this->rf_recording_number_), YESNO(ok));
+  return ok;
+}
+
+std::string RFBridgeComponent::get_rf_recorder_status() const {
+  return std::string(this->rf_recorder_status_);
+}
+
+std::string RFBridgeComponent::get_rf_recording_summary() const {
+  if (!this->srx882_capture_valid_) return std::string("No recording");
+  char summary[160];
+  snprintf(summary, sizeof(summary), "#%u | %u edges | %u ms | initial=%u",
+           static_cast<unsigned>(this->rf_recording_number_), this->srx882_edge_count_,
+           static_cast<unsigned>(this->srx882_capture_duration_us_ / 1000UL),
+           this->srx882_initial_level_);
+  return std::string(summary);
+}
+
 }  // namespace rfbridge
 }  // namespace esphome

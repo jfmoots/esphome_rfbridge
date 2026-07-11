@@ -42,58 +42,28 @@ rfbridge:
 
 button:
   - platform: template
-    name: "RF Learn Sequence (CC1101)"
+    name: "RF Recorder - Record Command"
+    on_press:
+      - lambda: |-
+          id(rf_bridge).start_rf_recorder(3000);
+
+  - platform: template
+    name: "RF Recorder - Replay Command"
+    on_press:
+      - lambda: |-
+          id(rf_bridge).replay_rf_recording(1);
+
+  - platform: template
+    name: "RF Recorder - Clear Command"
+    on_press:
+      - lambda: |-
+          id(rf_bridge).clear_rf_recording();
+
+  - platform: template
+    name: "RF Learn Sequence (CC1101 Diagnostic)"
     on_press:
       - lambda: |-
           id(rf_bridge).start_rf_sequence_capture(1500);
-
-  - platform: template
-    name: "RF Clear Learned Command"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).clear_last_outprize_learned();
-
-  - platform: template
-    name: "RF Clear Sequence"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).clear_rf_sequence_capture();
-
-  - platform: template
-    name: "STX882 Replay Learned Raw Command"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).replay_last_outprize_raw_capture_stx882();
-
-  - platform: template
-    name: "STX882 Replay Learned Sequence"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).replay_rf_sequence_raw_stx882();
-
-  - platform: template
-    name: "STX882 Test Known Power Off"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).send_outprize_power_off_stx882();
-
-  - platform: template
-    name: "SRX882 Capture Raw Command"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).capture_srx882_raw(3000);
-
-  - platform: template
-    name: "SRX882 Clear Raw Capture"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).clear_srx882_capture();
-
-  - platform: template
-    name: "STX882 Replay SRX882 Raw Capture"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).replay_srx882_capture_stx882();
 
   - platform: template
     name: "CC1101 Replay Learned Raw Command (Diagnostic)"
@@ -103,35 +73,19 @@ button:
 
 binary_sensor:
   - platform: template
-    name: "RF Learned Command Available"
+    name: "RF Recording Available"
     lambda: |-
-      return id(rf_bridge).has_learned_command();
-
-  - platform: template
-    name: "RF Sequence Available"
-    lambda: |-
-      return id(rf_bridge).has_sequence_capture();
-
-  - platform: template
-    name: "SRX882 Raw Capture Available"
-    lambda: |-
-      return id(rf_bridge).has_srx882_capture();
+      return id(rf_bridge).has_rf_recording();
 
 text_sensor:
   - platform: template
-    name: "RF Last Learned Command"
+    name: "RF Recorder Status"
     update_interval: 1s
     lambda: |-
-      return id(rf_bridge).get_last_learned_summary();
+      return id(rf_bridge).get_rf_recorder_status();
 
   - platform: template
-    name: "RF Last Sequence"
+    name: "RF Recorded Command"
     update_interval: 1s
     lambda: |-
-      return id(rf_bridge).get_sequence_summary();
-
-  - platform: template
-    name: "SRX882 Last Raw Capture"
-    update_interval: 1s
-    lambda: |-
-      return id(rf_bridge).get_srx882_summary();
+      return id(rf_bridge).get_rf_recording_summary();
