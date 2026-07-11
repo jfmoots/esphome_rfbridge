@@ -1,8 +1,8 @@
 #pragma once
 
 // Static version metadata for ESPHome external-component builds.
-#define RFBRIDGE_VERSION "1.3.29"
+#define RFBRIDGE_VERSION "1.4.0"
 #define RFBRIDGE_FIRMWARE_VERSION RFBRIDGE_VERSION
 #define RFBRIDGE_BUILD_DATE "2026-07-11"
 #define RFBRIDGE_BUILD_TIME "built"
-#define RFBRIDGE_GIT_REF "v1.3.29"
+#define RFBRIDGE_GIT_REF "v1.4.0"

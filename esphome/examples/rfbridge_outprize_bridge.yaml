@@ -1,31 +1,5 @@
-esphome:
-  name: esphome-web-bafaac
-  friendly_name: RF Bridge
-  min_version: 2026.4.0
-  name_add_mac_suffix: false
-
-esp32:
-  board: esp32dev
-  framework:
-    type: arduino
-
-logger:
-api:
-ota:
-  - platform: esphome
-wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-web_server:
-
-external_components:
-  - source:
-      type: git
-      url: https://github.com/jfmoots/esphome_rfbridge
-      ref: main
-      path: esphome/components
-    components: [rfbridge]
-    refresh: 0s
+# RF Bridge v1.4.0 transport/API example.
+# The ESP exposes a stable command/state contract; the future HA integration owns fan/cover entities.
 
 rfbridge:
   id: rf_bridge
@@ -38,74 +12,106 @@ rfbridge:
   stx882_data_pin: GPIO26
   srx882_data_pin: GPIO25
   srx882_enable_pin: GPIO33
-  diagnostic_logging: true
+  remote_id: 0x6CF
+  diagnostic_logging: false
 
-button:
-  - platform: template
-    name: "RF Recorder - Record Command"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).start_rf_recorder(3000);
+api:
+  actions:
+    - action: outprize_set_complete_state
+      variables:
+        powered: bool
+        speed_percent: int
+        direction_in: bool
+        rain_enabled: bool
+        vent_command: int
+      then:
+        - lambda: |-
+            id(rf_bridge).set_outprize_complete_state(
+              powered,
+              static_cast<uint8_t>(speed_percent),
+              direction_in ? esphome::rfbridge::OutprizeDirection::IN : esphome::rfbridge::OutprizeDirection::OUT,
+              rain_enabled,
+              static_cast<esphome::rfbridge::OutprizeVentCommand>(vent_command & 0x0C),
+              1);
 
-  - platform: template
-    name: "RF Recorder - Replay Command"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).replay_rf_recording(1);
+    - action: outprize_set_power
+      variables:
+        powered: bool
+      then:
+        - lambda: id(rf_bridge).set_outprize_power(powered, 1);
 
-  - platform: template
-    name: "RF Recorder - Clear Command"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).clear_rf_recording();
+    - action: outprize_set_speed
+      variables:
+        speed_percent: int
+      then:
+        - lambda: id(rf_bridge).set_outprize_speed(static_cast<uint8_t>(speed_percent), 1);
 
-  - platform: template
-    name: "RF Learn Sequence (CC1101 Diagnostic)"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).start_rf_sequence_capture(1500);
+    - action: outprize_set_direction
+      variables:
+        direction_in: bool
+      then:
+        - lambda: |-
+            id(rf_bridge).set_outprize_direction(
+              direction_in ? esphome::rfbridge::OutprizeDirection::IN : esphome::rfbridge::OutprizeDirection::OUT, 1);
 
-  - platform: template
-    name: "CC1101 Replay Learned Raw Command (Diagnostic)"
-    on_press:
-      - lambda: |-
-          id(rf_bridge).replay_last_outprize_raw_capture();
+    - action: outprize_set_rain
+      variables:
+        enabled: bool
+      then:
+        - lambda: id(rf_bridge).set_outprize_rain(enabled, 1);
+
+    - action: outprize_set_vent
+      variables:
+        command: int
+      then:
+        - lambda: |-
+            id(rf_bridge).set_outprize_vent(
+              static_cast<esphome::rfbridge::OutprizeVentCommand>(command & 0x0C), 1);
 
 binary_sensor:
   - platform: template
-    name: "RF Recording Available"
-    lambda: |-
-      return id(rf_bridge).has_rf_recording();
+    name: "Outprize State Valid"
+    lambda: return id(rf_bridge).has_outprize_state();
+
+  - platform: template
+    name: "Outprize Power Requested"
+    lambda: return id(rf_bridge).get_outprize_power();
+
+  - platform: template
+    name: "Outprize Direction In"
+    lambda: return id(rf_bridge).get_outprize_direction_in();
+
+  - platform: template
+    name: "Outprize Rain Enabled"
+    lambda: return id(rf_bridge).get_outprize_rain();
+
+sensor:
+  - platform: template
+    name: "Outprize Speed Requested"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 500ms
+    lambda: return id(rf_bridge).get_outprize_speed();
+
+  - platform: template
+    name: "Outprize Vent Command"
+    accuracy_decimals: 0
+    update_interval: 500ms
+    lambda: return id(rf_bridge).get_outprize_vent_command();
+
+  - platform: template
+    name: "Outprize State Revision"
+    accuracy_decimals: 0
+    update_interval: 500ms
+    lambda: return id(rf_bridge).get_outprize_revision();
 
 text_sensor:
   - platform: template
-    name: "RF Recorder Status"
-    update_interval: 1s
-    lambda: |-
-      return id(rf_bridge).get_rf_recorder_status();
+    name: "Outprize Command Source"
+    update_interval: 500ms
+    lambda: return id(rf_bridge).get_outprize_command_source();
 
   - platform: template
-    name: "RF Recorded Command"
-    update_interval: 1s
-    lambda: |-
-      return id(rf_bridge).get_rf_recording_summary();
-
-# v1.3.27 diagnostic controls (merge under your existing sections)
-# button:
-#   - platform: template
-#     name: "Outprize Analyze Recorded Power Off"
-#     on_press:
-#       - lambda: id(rf_bridge).analyze_rf_recording_outprize(0x600000);
-#   - platform: template
-#     name: "Outprize Manufacture Power Off"
-#     on_press:
-#       - lambda: id(rf_bridge).replay_manufactured_outprize_low24(0x600000, 1);
-#   - platform: template
-#     name: "Outprize Manufacture 10 Percent OUT"
-#     on_press:
-#       - lambda: id(rf_bridge).replay_manufactured_outprize(10, rfbridge::OutprizeDirection::OUT, false, rfbridge::OutprizeVentCommand::NONE, 1);
-# text_sensor:
-#   - platform: template
-#     name: "Outprize Waveform Template"
-#     update_interval: 1s
-#     lambda: return id(rf_bridge).get_outprize_template_summary();
+    name: "Outprize State"
+    update_interval: 500ms
+    lambda: return id(rf_bridge).get_outprize_state_summary();
