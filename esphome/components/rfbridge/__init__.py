@@ -9,6 +9,9 @@ CONF_MOSI_PIN = "mosi_pin"
 CONF_MISO_PIN = "miso_pin"
 CONF_GDO0_PIN = "gdo0_pin"
 CONF_GDO2_PIN = "gdo2_pin"
+CONF_STX882_DATA_PIN = "stx882_data_pin"
+CONF_SRX882_DATA_PIN = "srx882_data_pin"
+CONF_SRX882_ENABLE_PIN = "srx882_enable_pin"
 CONF_DIAGNOSTIC_LOGGING = "diagnostic_logging"
 CONF_LOW24 = "low24"
 CONF_REMOTE_ID = "remote_id"
@@ -29,6 +32,9 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Required(CONF_MISO_PIN): pins.gpio_input_pin_schema,
         cv.Optional(CONF_GDO0_PIN): pins.gpio_input_pin_schema,
         cv.Optional(CONF_GDO2_PIN): pins.gpio_input_pin_schema,
+        cv.Optional(CONF_STX882_DATA_PIN): pins.gpio_output_pin_schema,
+        cv.Optional(CONF_SRX882_DATA_PIN): pins.gpio_input_pin_schema,
+        cv.Optional(CONF_SRX882_ENABLE_PIN): pins.gpio_output_pin_schema,
         cv.Optional(CONF_DIAGNOSTIC_LOGGING, default=False): cv.boolean,
         cv.Optional(CONF_REMOTE_ID, default=0x6CF): cv.hex_uint32_t,
     }
@@ -49,6 +55,15 @@ async def to_code(config):
 
     if CONF_GDO2_PIN in config:
         cg.add(var.set_gdo2_pin(await cg.gpio_pin_expression(config[CONF_GDO2_PIN])))
+
+    if CONF_STX882_DATA_PIN in config:
+        cg.add(var.set_stx882_data_pin(await cg.gpio_pin_expression(config[CONF_STX882_DATA_PIN])))
+
+    if CONF_SRX882_DATA_PIN in config:
+        cg.add(var.set_srx882_data_pin(await cg.gpio_pin_expression(config[CONF_SRX882_DATA_PIN])))
+
+    if CONF_SRX882_ENABLE_PIN in config:
+        cg.add(var.set_srx882_enable_pin(await cg.gpio_pin_expression(config[CONF_SRX882_ENABLE_PIN])))
 
     cg.add(var.set_diagnostic_logging(config[CONF_DIAGNOSTIC_LOGGING]))
     cg.add(var.set_outprize_remote_id(config[CONF_REMOTE_ID]))

@@ -36,6 +36,9 @@ class RFBridgeComponent : public Component {
   void set_miso_pin(GPIOPin *pin) { this->miso_pin_ = pin; }
   void set_gdo0_pin(GPIOPin *pin) { this->gdo0_pin_ = pin; }
   void set_gdo2_pin(GPIOPin *pin) { this->gdo2_pin_ = pin; }
+  void set_stx882_data_pin(GPIOPin *pin) { this->stx882_data_pin_ = pin; }
+  void set_srx882_data_pin(GPIOPin *pin) { this->srx882_data_pin_ = pin; }
+  void set_srx882_enable_pin(GPIOPin *pin) { this->srx882_enable_pin_ = pin; }
   void set_diagnostic_logging(bool diagnostic_logging) { this->diagnostic_logging_ = diagnostic_logging; }
   void set_outprize_remote_id(uint32_t remote_id) { this->outprize_remote_id_ = remote_id & 0x7FF; }
 
@@ -111,6 +114,18 @@ class RFBridgeComponent : public Component {
   std::string get_last_learned_summary() const;
   std::string get_sequence_summary() const;
 
+  // v1.3.24: discrete ASK/OOK backends. The STX882 provides a direct
+  // carrier-on/carrier-off transmitter path; the SRX882 provides an
+  // explicit raw-capture receiver path independent of the CC1101 modem.
+  bool replay_last_outprize_raw_capture_stx882(uint8_t repeats = 1);
+  bool replay_rf_sequence_raw_stx882(uint8_t repeats = 1);
+  bool send_outprize_power_off_stx882(uint8_t repeats = 8);
+  void capture_srx882_raw(uint16_t duration_ms = 1500);
+  void clear_srx882_capture();
+  bool replay_srx882_capture_stx882(uint8_t repeats = 1);
+  bool has_srx882_capture() const { return this->srx882_capture_valid_; }
+  std::string get_srx882_summary() const;
+
  protected:
   GPIOPin *cs_pin_{nullptr};
   GPIOPin *sck_pin_{nullptr};
@@ -118,6 +133,9 @@ class RFBridgeComponent : public Component {
   GPIOPin *miso_pin_{nullptr};
   GPIOPin *gdo0_pin_{nullptr};
   GPIOPin *gdo2_pin_{nullptr};
+  GPIOPin *stx882_data_pin_{nullptr};
+  GPIOPin *srx882_data_pin_{nullptr};
+  GPIOPin *srx882_enable_pin_{nullptr};
 
   bool cc1101_begin_();
   bool cc1101_detected_{false};
@@ -287,6 +305,8 @@ class RFBridgeComponent : public Component {
   bool transmit_raw_edge_capture_(const uint16_t *edges, const uint8_t *levels, uint16_t edge_count, uint8_t initial_level, uint8_t repeats, const char *label);
   bool transmit_learned_raw_outprize_(uint8_t repeats = 1);
   bool transmit_sequence_raw_(uint8_t repeats = 1);
+  bool transmit_raw_edge_capture_stx882_(const uint16_t *edges, const uint8_t *levels, uint16_t edge_count, uint8_t initial_level, uint8_t repeats, const char *label);
+  bool transmit_sequence_raw_stx882_(uint8_t repeats = 1);
   bool transmit_learned_outprize_(uint8_t repeats = 8);
   uint16_t tx_build_edge_deltas_(uint64_t frame, uint8_t bits, TxFrameMode mode, bool include_preamble, uint16_t *out, uint16_t max_edges) const;
   void log_outprize_edge_compare_(uint64_t frame, uint8_t bits, TxFrameMode mode) const;
@@ -312,6 +332,15 @@ class RFBridgeComponent : public Component {
   uint8_t tx_pa_value_{CC1101_TX_PA_TEST};
   uint8_t tx_frend0_value_{0x11};
   uint8_t tx_mdmcfg2_value_{0x30};
+
+  static constexpr uint16_t SRX882_MAX_EDGES = 2048;
+  bool srx882_capture_valid_{false};
+  uint16_t srx882_edge_count_{0};
+  uint8_t srx882_initial_level_{0};
+  uint32_t srx882_capture_duration_us_{0};
+  uint16_t srx882_edges_[SRX882_MAX_EDGES]{};
+  uint8_t srx882_levels_[SRX882_MAX_EDGES]{};
+  char srx882_summary_[128]{"No SRX882 capture"};
 
   bool tx_carrier_active_{false};
   uint32_t tx_carrier_started_ms_{0};

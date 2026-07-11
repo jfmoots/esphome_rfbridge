@@ -37,6 +37,18 @@ void RFBridgeComponent::setup() {
   if (this->gdo2_pin_ != nullptr) {
     this->gdo2_pin_->setup();
   }
+  if (this->stx882_data_pin_ != nullptr) {
+    this->stx882_data_pin_->setup();
+    this->stx882_data_pin_->digital_write(false);
+  }
+  if (this->srx882_data_pin_ != nullptr) {
+    this->srx882_data_pin_->setup();
+  }
+  if (this->srx882_enable_pin_ != nullptr) {
+    this->srx882_enable_pin_->setup();
+    // SRX882/SRX882S CS is active-high: HIGH = receive, LOW = standby.
+    this->srx882_enable_pin_->digital_write(true);
+  }
 
   if (!this->cc1101_begin_()) {
     ESP_LOGE(TAG, "CC1101 bring-up failed; RF functions disabled, but ESPHome will remain online");
@@ -81,13 +93,18 @@ void RFBridgeComponent::dump_config() {
   LOG_PIN("  MISO Pin: ", this->miso_pin_);
   LOG_PIN("  GDO0 Pin: ", this->gdo0_pin_);
   LOG_PIN("  GDO2 Pin: ", this->gdo2_pin_);
+  LOG_PIN("  STX882 DATA Pin: ", this->stx882_data_pin_);
+  LOG_PIN("  SRX882 DATA Pin: ", this->srx882_data_pin_);
+  LOG_PIN("  SRX882 Enable Pin: ", this->srx882_enable_pin_);
   ESP_LOGCONFIG(TAG, "  CC1101 Detected: %s", YESNO(this->cc1101_detected_));
   ESP_LOGCONFIG(TAG, "  CC1101 Configured: %s", YESNO(this->cc1101_configured_));
   ESP_LOGCONFIG(TAG, "  CC1101 PARTNUM: 0x%02X", this->cc1101_partnum_);
   ESP_LOGCONFIG(TAG, "  CC1101 VERSION: 0x%02X", this->cc1101_version_);
   ESP_LOGCONFIG(TAG, "  RX Enabled: %s", YESNO(this->rx_enabled_));
   ESP_LOGCONFIG(TAG, "  RX Mode: RSSI-gated fixed-window verified Outprize decoder");
-  ESP_LOGCONFIG(TAG, "  TX Mode: Experimental CC1101 async OOK transmitter (ESP drives GDO0 TX data)");
+  ESP_LOGCONFIG(TAG, "  TX Mode: CC1101 async OOK plus optional direct STX882 ASK/OOK backend");
+  ESP_LOGCONFIG(TAG, "  STX882 Available: %s", YESNO(this->stx882_data_pin_ != nullptr));
+  ESP_LOGCONFIG(TAG, "  SRX882 Available: %s", YESNO(this->srx882_data_pin_ != nullptr));
   ESP_LOGCONFIG(TAG, "  Diagnostic Logging: %s", YESNO(this->diagnostic_logging_));
   ESP_LOGCONFIG(TAG, "  Learned Outprize Frame: %s", YESNO(this->outprize_learned_valid_));
   ESP_LOGCONFIG(TAG, "  Outprize Remote ID / 11-bit prefix: 0x%03X", this->outprize_remote_id_ & 0x7FF);
@@ -1103,7 +1120,7 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
     confidence = "fair";
   }
 
-  if (best.valid && best.bit_count >= OUTPRIZE_TX_BITS) {
+  if (best.valid && best.bit_count >= OUTPRIZE_TX_BITS && this->sequence_active_) {
     this->outprize_learned_valid_ = true;
     this->outprize_learned_full35_ = best.full_packet & 0x7FFFFFFFFULL;
     this->outprize_learned_low24_ = best.low24 & 0xFFFFFFUL;
@@ -2088,6 +2105,10 @@ void RFBridgeComponent::start_rf_sequence_capture(uint16_t duration_ms) {
   if (duration_ms < 300) duration_ms = 300;
   if (duration_ms > 5000) duration_ms = 5000;
   this->clear_rf_sequence_capture();
+  // Deliberate/gated learning: starting a new learn window invalidates the
+  // previous learned command, and normal RF traffic outside this window does
+  // not overwrite the learned command.
+  this->clear_last_outprize_learned();
   this->sequence_active_ = true;
   this->sequence_started_ms_ = millis();
   this->sequence_until_ms_ = this->sequence_started_ms_ + duration_ms;
@@ -2288,6 +2309,214 @@ bool RFBridgeComponent::transmit_last_capture_(uint8_t repeats) {
     levels[i] = this->rx_levels_[i];
   }
   return this->transmit_raw_edge_capture_(edges, levels, edge_count, this->rx_capture_initial_level_, repeats, "LAST_RAW_CAPTURE");
+}
+
+
+bool RFBridgeComponent::replay_last_outprize_raw_capture_stx882(uint8_t repeats) {
+  if (!this->outprize_learned_valid_ || this->outprize_learned_edge_count_ < OUTPRIZE_MIN_EDGES) {
+    ESP_LOGW(TAG, "STX882 learned raw replay unavailable; learn an OEM command first (valid=%s edges=%u)",
+             YESNO(this->outprize_learned_valid_), this->outprize_learned_edge_count_);
+    return false;
+  }
+  return this->transmit_raw_edge_capture_stx882_(this->outprize_learned_edges_, this->outprize_learned_levels_,
+                                                 this->outprize_learned_edge_count_,
+                                                 this->outprize_learned_initial_level_, repeats,
+                                                 "STX882_LEARNED_RAW");
+}
+
+bool RFBridgeComponent::replay_rf_sequence_raw_stx882(uint8_t repeats) {
+  return this->transmit_sequence_raw_stx882_(repeats);
+}
+
+bool RFBridgeComponent::send_outprize_power_off_stx882(uint8_t repeats) {
+  uint16_t edges[96]{};
+  const uint64_t frame = (static_cast<uint64_t>(this->outprize_remote_id_ & 0x7FF) << 24) | 0x600000ULL;
+  const uint16_t count = this->tx_build_edge_deltas_(frame, OUTPRIZE_TX_BITS, TxFrameMode::MSB_NORMAL, true,
+                                                     edges, sizeof(edges) / sizeof(edges[0]));
+  if (count == 0) {
+    ESP_LOGE(TAG, "STX882 Power Off waveform build failed");
+    return false;
+  }
+  uint8_t levels[96]{};
+  bool level = true;
+  for (uint16_t i = 0; i < count; i++) {
+    level = !level;
+    levels[i] = level ? 1 : 0;
+  }
+  ESP_LOGI(TAG, "STX882 known Power Off TX full35=0x%09llX edges=%u repeats=%u",
+           static_cast<unsigned long long>(frame), count, repeats);
+  return this->transmit_raw_edge_capture_stx882_(edges, levels, count, 1, repeats, "STX882_POWER_OFF");
+}
+
+bool RFBridgeComponent::transmit_raw_edge_capture_stx882_(const uint16_t *edges, const uint8_t *levels,
+                                                           uint16_t edge_count, uint8_t initial_level,
+                                                           uint8_t repeats, const char *label) {
+  if (this->stx882_data_pin_ == nullptr) {
+    ESP_LOGE(TAG, "STX882 TX unavailable; stx882_data_pin is not configured");
+    return false;
+  }
+  if (edges == nullptr || levels == nullptr || edge_count == 0) {
+    ESP_LOGW(TAG, "STX882 TX unavailable; no usable edge capture stored (edges=%u)", edge_count);
+    return false;
+  }
+  if (repeats == 0) repeats = 1;
+  if (repeats > 8) repeats = 8;
+
+  uint32_t single_duration = 0;
+  for (uint16_t i = 0; i < edge_count; i++) single_duration += edges[i];
+  ESP_LOGI(TAG, "STX882 raw TX start label=%s edges=%u initial=%u repeats=%u duration=%u us gap=%u us",
+           label, edge_count, initial_level, repeats, single_duration, OUTPRIZE_TX_INTER_FRAME_GAP_US);
+
+  // Keep the CC1101 quiet while the nearby STX882 transmits. This prevents
+  // self-reception and front-end overload during normal operation.
+  const bool restore_cc1101 = this->cc1101_configured_;
+  if (restore_cc1101) {
+    this->rx_enabled_ = false;
+    this->cc1101_enter_idle_();
+  }
+
+  this->stx882_data_pin_->pin_mode(gpio::FLAG_OUTPUT);
+  bool current_level = initial_level != 0;
+  this->stx882_data_pin_->digital_write(current_level);
+  delayMicroseconds(1000);
+
+  for (uint8_t r = 0; r < repeats; r++) {
+    current_level = initial_level != 0;
+    this->stx882_data_pin_->digital_write(current_level);
+    for (uint16_t i = 0; i < edge_count; i++) {
+      delayMicroseconds(edges[i]);
+      current_level = levels[i] != 0;
+      this->stx882_data_pin_->digital_write(current_level);
+    }
+    this->stx882_data_pin_->digital_write(false);
+    delayMicroseconds(OUTPRIZE_TX_INTER_FRAME_GAP_US);
+  }
+  this->stx882_data_pin_->digital_write(false);
+
+  if (restore_cc1101) {
+    this->cc1101_configure_ook_async_rx_();
+    this->cc1101_enter_rx_();
+    if (this->gdo0_pin_ != nullptr) {
+      this->rx_reset_packet_(micros(), this->gdo0_pin_->digital_read());
+    }
+    this->rx_last_capture_ms_ = millis();
+    this->rx_enabled_ = true;
+  }
+
+  ESP_LOGI(TAG, "STX882 raw TX complete label=%s edges=%u repeats=%u", label, edge_count, repeats);
+  return true;
+}
+
+bool RFBridgeComponent::transmit_sequence_raw_stx882_(uint8_t repeats) {
+  if (this->sequence_count_ == 0) {
+    ESP_LOGW(TAG, "STX882 sequence replay unavailable; no sequence captured");
+    return false;
+  }
+  if (repeats == 0) repeats = 1;
+  if (repeats > 4) repeats = 4;
+  ESP_LOGI(TAG, "STX882 sequence replay start frames=%u repeats=%u", this->sequence_count_, repeats);
+  bool ok = true;
+  for (uint8_t r = 0; r < repeats; r++) {
+    for (uint8_t i = 0; i < this->sequence_count_; i++) {
+      char label[40];
+      snprintf(label, sizeof(label), "STX882_SEQUENCE_%u", i + 1);
+      ok &= this->transmit_raw_edge_capture_stx882_(this->sequence_edges_[i], this->sequence_levels_[i],
+                                                    this->sequence_edge_count_[i],
+                                                    this->sequence_initial_level_[i], 1, label);
+      if (i + 1 < this->sequence_count_) {
+        uint32_t wait_ms = 50;
+        if (this->sequence_frame_ms_[i + 1] > this->sequence_frame_ms_[i]) {
+          wait_ms = this->sequence_frame_ms_[i + 1] - this->sequence_frame_ms_[i];
+          if (wait_ms > 500) wait_ms = 500;
+        }
+        delay(wait_ms);
+      }
+    }
+  }
+  ESP_LOGI(TAG, "STX882 sequence replay complete frames=%u ok=%s", this->sequence_count_, YESNO(ok));
+  return ok;
+}
+
+void RFBridgeComponent::capture_srx882_raw(uint16_t duration_ms) {
+  if (this->srx882_data_pin_ == nullptr) {
+    ESP_LOGE(TAG, "SRX882 capture unavailable; srx882_data_pin is not configured");
+    return;
+  }
+  if (duration_ms < 250) duration_ms = 250;
+  if (duration_ms > 5000) duration_ms = 5000;
+
+  this->clear_srx882_capture();
+  if (this->srx882_enable_pin_ != nullptr) this->srx882_enable_pin_->digital_write(true);
+  if (this->cc1101_configured_) {
+    this->rx_enabled_ = false;
+    this->cc1101_enter_idle_();
+  }
+
+  this->srx882_data_pin_->pin_mode(gpio::FLAG_INPUT);
+  bool last_level = this->srx882_data_pin_->digital_read();
+  this->srx882_initial_level_ = last_level ? 1 : 0;
+  const uint32_t start_us = micros();
+  uint32_t last_edge_us = start_us;
+  const uint32_t end_us = start_us + static_cast<uint32_t>(duration_ms) * 1000UL;
+
+  ESP_LOGI(TAG, "SRX882 raw capture start duration=%u ms initial=%u; press the OEM remote now",
+           duration_ms, this->srx882_initial_level_);
+  while (static_cast<int32_t>(micros() - end_us) < 0) {
+    const bool level = this->srx882_data_pin_->digital_read();
+    if (level != last_level) {
+      const uint32_t now = micros();
+      if (this->srx882_edge_count_ < SRX882_MAX_EDGES) {
+        uint32_t delta = now - last_edge_us;
+        if (delta > 65535) delta = 65535;
+        this->srx882_edges_[this->srx882_edge_count_] = static_cast<uint16_t>(delta);
+        this->srx882_levels_[this->srx882_edge_count_] = level ? 1 : 0;
+        this->srx882_edge_count_++;
+      }
+      last_edge_us = now;
+      last_level = level;
+    }
+    delayMicroseconds(2);
+  }
+  this->srx882_capture_duration_us_ = micros() - start_us;
+  this->srx882_capture_valid_ = this->srx882_edge_count_ >= RX_MIN_EDGES;
+  snprintf(this->srx882_summary_, sizeof(this->srx882_summary_), "%s: %u edges / %u ms",
+           this->srx882_capture_valid_ ? "Captured" : "No valid capture",
+           this->srx882_edge_count_, static_cast<unsigned>(this->srx882_capture_duration_us_ / 1000UL));
+  ESP_LOGI(TAG, "SRX882 raw capture complete valid=%s edges=%u duration=%u us",
+           YESNO(this->srx882_capture_valid_), this->srx882_edge_count_, this->srx882_capture_duration_us_);
+
+  if (this->cc1101_configured_) {
+    this->cc1101_configure_ook_async_rx_();
+    this->cc1101_enter_rx_();
+    if (this->gdo0_pin_ != nullptr) this->rx_reset_packet_(micros(), this->gdo0_pin_->digital_read());
+    this->rx_last_capture_ms_ = millis();
+    this->rx_enabled_ = true;
+  }
+}
+
+void RFBridgeComponent::clear_srx882_capture() {
+  this->srx882_capture_valid_ = false;
+  this->srx882_edge_count_ = 0;
+  this->srx882_initial_level_ = 0;
+  this->srx882_capture_duration_us_ = 0;
+  memset(this->srx882_edges_, 0, sizeof(this->srx882_edges_));
+  memset(this->srx882_levels_, 0, sizeof(this->srx882_levels_));
+  snprintf(this->srx882_summary_, sizeof(this->srx882_summary_), "No SRX882 capture");
+  ESP_LOGI(TAG, "SRX882 raw capture cleared");
+}
+
+bool RFBridgeComponent::replay_srx882_capture_stx882(uint8_t repeats) {
+  if (!this->srx882_capture_valid_) {
+    ESP_LOGW(TAG, "SRX882-to-STX882 replay unavailable; no valid SRX882 capture");
+    return false;
+  }
+  return this->transmit_raw_edge_capture_stx882_(this->srx882_edges_, this->srx882_levels_,
+                                                 this->srx882_edge_count_, this->srx882_initial_level_,
+                                                 repeats, "SRX882_CAPTURE");
+}
+
+std::string RFBridgeComponent::get_srx882_summary() const {
+  return std::string(this->srx882_summary_);
 }
 
 }  // namespace rfbridge
