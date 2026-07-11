@@ -364,7 +364,7 @@ class RFBridgeComponent : public Component {
   char rf_recorder_status_[64]{"Ready"};
   uint32_t rf_recording_number_{0};
 
-  bool outprize_template_valid_{false};
+  bool outprize_template_valid_{true};
   uint16_t outprize_template_data_start_{0};
   TxFrameMode outprize_template_mode_{TxFrameMode::MSB_NORMAL};
   uint16_t outprize_template_pulse_us_{0};
@@ -372,7 +372,7 @@ class RFBridgeComponent : public Component {
   uint16_t outprize_template_long_gap_us_{0};
   uint32_t outprize_template_source_low24_{0};
   uint16_t outprize_template_score_{0};
-  char outprize_template_summary_[160]{"No Outprize waveform template"};
+  char outprize_template_summary_[160]{"Built-in canonical | start=8 mode=MSB_NORMAL pulse=500 short=500 long=1500"};
 
   bool outprize_template_bit_(uint64_t frame, uint8_t bit_index, TxFrameMode mode) const;
   void log_rf_recording_edges_() const;

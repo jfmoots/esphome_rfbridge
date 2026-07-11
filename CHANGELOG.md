@@ -1,23 +1,11 @@
 # Changelog
 
-## v1.3.27 – Accepted Waveform Template & State Manufacturer
+## v1.3.28 — Built-in Outprize Waveform Manufacturer
 
-- Adds an edge-for-edge dump of the known-good SRX882 recording.
-- Finds the embedded 35-bit Outprize payload within the accepted burst.
-- Determines bit order/inversion and measured pulse/short-gap/long-gap timing.
-- Adds a persistent in-RAM Outprize waveform template derived from the accepted Power Off recording.
-- Adds manufactured arbitrary Low24 replay through STX882 while preserving the accepted header, trailer, levels, and pulse widths.
-- Adds full-state manufactured replay using the canonical Gray-coded speed, direction, rain, and vent encoding.
-- Keeps the v1.3.26 smart burst recorder unchanged.
-
-# esphome_rfbridge v1.3.25
-
-## v1.3.25 – SRX882/STX882 Raw RF Recorder
-
-- Adds an explicit RF recorder using the proven SRX882 raw capture and STX882 raw replay path.
-- Adds `start_rf_recorder(duration_ms)`.
-- Adds `replay_rf_recording(repeats)`.
-- Adds `clear_rf_recording()`.
-- Adds Home Assistant-visible recorder availability, state, and recording summary helpers.
-- Recording is deliberately gated and cannot be silently overwritten by ambient RF or later remote use.
-- Keeps the v1.3.24 diagnostic and legacy transmit paths available in code.
+- Packages the accepted Outprize waveform structure directly in firmware.
+- Removes the requirement to record or analyze an OEM command before normal transmission.
+- Generates the full 35-bit frame MSB-first using remote prefix `0x6CF`.
+- Uses the learned canonical envelope: 8 fixed header edges, 500 µs data pulses, 500 µs zero gaps, and 1500 µs one gaps.
+- Keeps the SRX882 recorder and waveform analyzer as diagnostic tools only.
+- Existing manufactured-command APIs now use the built-in generator automatically.
+- Commands work immediately after boot or firmware update without any captured template in RAM or flash.

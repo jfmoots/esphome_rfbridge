@@ -1,3 +1,8 @@
+
+## v1.3.28 built-in Outprize generator
+
+Normal Outprize transmission no longer requires a learned SRX882 waveform. The firmware ships with the canonical accepted envelope and manufactures every 35-bit full-state command directly through the STX882. The recorder and analyzer remain available for diagnostics and future RF protocols.
+
 # ESPHome RF Bridge v1.3.25
 
 ESPHome external component for an ESP32 RF laboratory using:

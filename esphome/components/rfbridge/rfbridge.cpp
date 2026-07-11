@@ -2825,49 +2825,47 @@ bool RFBridgeComponent::analyze_rf_recording_outprize(uint32_t source_low24) {
 }
 
 bool RFBridgeComponent::replay_manufactured_outprize_low24(uint32_t low24, uint8_t repeats) {
-  if (!this->outprize_template_valid_ || !this->srx882_capture_valid_) {
-    ESP_LOGW(TAG, "OUTPRIZE_MANUFACTURE blocked; record and analyze a known Power Off burst first");
-    return false;
-  }
-  const uint16_t required = OUTPRIZE_TX_BITS * 2;
-  if (this->outprize_template_data_start_ + required > this->srx882_edge_count_) {
-    ESP_LOGE(TAG, "OUTPRIZE_MANUFACTURE template bounds invalid start=%u edges=%u",
-             this->outprize_template_data_start_, this->srx882_edge_count_);
-    return false;
-  }
+  // v1.3.28 canonical waveform learned from the accepted SRX882/STX882 captures.
+  // This is intentionally independent of recorder RAM and survives reboot/firmware updates.
+  // Envelope: 8 fixed header edges followed by 35 MSB-first PWM symbols.
+  static const uint16_t header_edges[8] = {
+      250, 1169, 4092, 1107, 2486, 363, 9030, 4506,
+  };
+  static constexpr uint16_t PULSE_US = 500;
+  static constexpr uint16_t SHORT_GAP_US = 500;
+  static constexpr uint16_t LONG_GAP_US = 1500;
+  static constexpr uint16_t EDGE_COUNT = 8 + OUTPRIZE_TX_BITS * 2;
 
   const uint64_t frame = (static_cast<uint64_t>(this->outprize_remote_id_ & 0x7FF) << 24) |
                          (low24 & 0xFFFFFFULL);
-  uint16_t original_gaps[OUTPRIZE_TX_BITS]{};
-  uint32_t changed = 0;
+  uint16_t edges[EDGE_COUNT]{};
+  uint8_t levels[EDGE_COUNT]{};
+
+  for (uint8_t i = 0; i < 8; i++) edges[i] = header_edges[i];
   for (uint8_t bit = 0; bit < OUTPRIZE_TX_BITS; bit++) {
-    const uint16_t pulse_index = this->outprize_template_data_start_ + bit * 2;
-    const uint16_t gap_index = pulse_index + 1;
-    original_gaps[bit] = this->srx882_edges_[gap_index];
-    const bool one = this->outprize_template_bit_(frame, bit, this->outprize_template_mode_);
-    // Preserve the accepted waveform's header, trailer, output levels and individual pulse widths.
-    // Manufacture only the logical symbol gap for each state bit.
-    const uint16_t replacement = one ? this->outprize_template_long_gap_us_
-                                     : this->outprize_template_short_gap_us_;
-    if (this->srx882_edges_[gap_index] != replacement) changed++;
-    this->srx882_edges_[gap_index] = replacement;
+    const uint16_t index = 8 + bit * 2;
+    edges[index] = PULSE_US;
+    const bool one = this->outprize_template_bit_(frame, bit, TxFrameMode::MSB_NORMAL);
+    edges[index + 1] = one ? LONG_GAP_US : SHORT_GAP_US;
   }
+
+  // Initial level is low. Every stored edge toggles the discrete OOK DATA output.
+  bool level = false;
   uint32_t duration = 0;
-  for (uint16_t i = 0; i < this->srx882_edge_count_; i++) duration += this->srx882_edges_[i];
-  ESP_LOGI(TAG, "OUTPRIZE_MANUFACTURE TX full35=0x%09llX low24=0x%06X edges=%u duration=%u us changed_gaps=%u template_recording=%u",
-           static_cast<unsigned long long>(frame), low24 & 0xFFFFFFUL, this->srx882_edge_count_,
-           static_cast<unsigned>(duration), static_cast<unsigned>(changed),
-           static_cast<unsigned>(this->rf_recording_number_));
-  const bool ok = this->transmit_raw_edge_capture_stx882_(this->srx882_edges_, this->srx882_levels_,
-                                                          this->srx882_edge_count_,
-                                                          this->srx882_initial_level_, repeats,
-                                                          "OUTPRIZE_MANUFACTURED");
-  // The original accepted recording remains the immutable reference template.
-  for (uint8_t bit = 0; bit < OUTPRIZE_TX_BITS; bit++) {
-    const uint16_t gap_index = this->outprize_template_data_start_ + bit * 2 + 1;
-    this->srx882_edges_[gap_index] = original_gaps[bit];
+  for (uint16_t i = 0; i < EDGE_COUNT; i++) {
+    duration += edges[i];
+    level = !level;
+    levels[i] = level ? 1 : 0;
   }
-  return ok;
+
+  ESP_LOGI(TAG,
+           "OUTPRIZE_BUILTIN TX full35=0x%09llX low24=0x%06X edges=%u duration=%u us "
+           "timing[pulse=%u short=%u long=%u] repeats=%u",
+           static_cast<unsigned long long>(frame), low24 & 0xFFFFFFUL, EDGE_COUNT,
+           static_cast<unsigned>(duration), PULSE_US, SHORT_GAP_US, LONG_GAP_US,
+           repeats == 0 ? 1 : repeats);
+  return this->transmit_raw_edge_capture_stx882_(edges, levels, EDGE_COUNT, 0, repeats,
+                                                  "OUTPRIZE_BUILTIN");
 }
 
 bool RFBridgeComponent::replay_manufactured_outprize(uint8_t speed_percent, OutprizeDirection direction,
