@@ -2928,6 +2928,18 @@ bool RFBridgeComponent::transmit_cached_state_(uint8_t repeats) {
   return this->replay_manufactured_outprize_low24(this->outprize_state_.low24, repeats);
 }
 
+bool RFBridgeComponent::send_outprize_fan_off(uint32_t remote_id, OutprizeVentCommand vent_command, uint8_t repeats) {
+  const uint32_t low24 = 0x600040UL | (static_cast<uint8_t>(vent_command) & 0x0C);
+  const uint32_t prefix = remote_id & 0x7FF;
+  ESP_LOGI(TAG,
+           "OUTPRIZE_API fan_off_awake route codec=%s tx_backend=%s remote=0x%03X vent=0x%02X low24=0x%06X full35=0x%09llX",
+           this->outprize_codec_.id(), this->outprize_codec_.tx_backend(), prefix,
+           static_cast<uint8_t>(vent_command), low24,
+           static_cast<unsigned long long>((static_cast<uint64_t>(prefix) << 24) | low24));
+  this->suppress_oem_until_ms_ = millis() + 300;
+  return this->replay_manufactured_outprize_low24(prefix, low24, repeats);
+}
+
 bool RFBridgeComponent::send_outprize_complete_state(uint32_t remote_id, bool powered, uint8_t speed_percent,
                                                         OutprizeDirection direction, bool rain_enabled,
                                                         OutprizeVentCommand vent_command, uint8_t repeats) {

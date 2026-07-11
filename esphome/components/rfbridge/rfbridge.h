@@ -70,6 +70,7 @@ class RFBridgeComponent : public Component {
   bool send_outprize_low24(uint32_t remote_id, uint32_t low24, uint8_t repeats);
   bool send_outprize_power_off(uint8_t repeats = 8) { return this->send_outprize_low24(0x600000, repeats); }
   bool send_outprize_fan_off(uint8_t repeats = 8) { return this->send_outprize_low24(0x600040, repeats); }
+  bool send_outprize_fan_off(uint32_t remote_id, OutprizeVentCommand vent_command = OutprizeVentCommand::NONE, uint8_t repeats = 1);
 
   // Reverse-engineering test helpers. These are intentionally public so they
   // can be called from ESPHome lambda buttons during protocol reconstruction.

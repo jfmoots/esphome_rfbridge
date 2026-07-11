@@ -148,3 +148,17 @@ text_sensor:
 #             rf_rain_enabled: !lambda return rain_enabled;
 #             rf_vent_command: !lambda return vent_command;
 #             rf_rssi_dbm: !lambda return rssi_dbm;
+
+# Add under your existing api: actions: block
+#
+#    - action: outprize_send_fan_off_awake
+#      variables:
+#        remote_id: int
+#        vent_command: int
+#      then:
+#        - lambda: |-
+#            id(rf_bridge).send_outprize_fan_off(
+#              static_cast<uint32_t>(remote_id),
+#              static_cast<esphome::rfbridge::OutprizeVentCommand>(vent_command & 0x0C),
+#              1);
+#

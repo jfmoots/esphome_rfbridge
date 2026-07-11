@@ -1,8 +1,8 @@
-# ESPHome RF Bridge v1.5.6
+# ESPHome RF Bridge v1.5.7
 
 ## Addressed STX882 routing fix
 
-v1.5.6 fixes the addressed Outprize command path introduced in v1.5.5. The
+v1.5.7 fixes the addressed Outprize command path introduced in v1.5.5. The
 multi-remote `outprize_send_complete_state` API now uses the same canonical
 waveform generator and discrete STX882 transmitter path already proven by the
 single-remote API.
@@ -53,3 +53,8 @@ data:
 
 Expected log markers include `codec=outprize`, `tx_backend=stx882`, and
 `OUTPRIZE_BUILTIN TX full35=0x6CF...`.
+
+
+## Addressed fan-off/awake API
+
+Use `send_outprize_fan_off(remote_id, vent_command, repeats)` to stop the fan without invoking dedicated power-off. The vent action nibble may be NONE (0), CLOSE (4), OPEN (8), or STOP (12).
