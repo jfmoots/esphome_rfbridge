@@ -2522,28 +2522,132 @@ std::string RFBridgeComponent::get_srx882_summary() const {
 void RFBridgeComponent::start_rf_recorder(uint16_t duration_ms) {
   if (duration_ms < 500) duration_ms = 500;
   if (duration_ms > 10000) duration_ms = 10000;
-  snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "Recording for %u ms", duration_ms);
-  ESP_LOGI(TAG, "RF RECORDER armed: capture window=%u ms; press the OEM remote now", duration_ms);
+  snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "Armed for %u ms", duration_ms);
+  ESP_LOGI(TAG, "RF RECORDER armed: search window=%u ms; press the OEM remote now", duration_ms);
 
-  // Use the exact SRX882 raw-capture path already proven to produce a
-  // fan-accepted replay. Starting a recording deliberately replaces the
-  // previous recording; ambient RF outside this call cannot overwrite it.
+  // First collect the complete SRX882 search window. The SRX882 chatters while
+  // idle, so this buffer is only an acquisition buffer. We then extract the
+  // best dense RF burst and retain only that burst for replay.
   this->capture_srx882_raw(duration_ms);
+
+  const uint16_t total_edges = this->srx882_edge_count_;
+  if (total_edges < RX_MIN_EDGES) {
+    this->srx882_capture_valid_ = false;
+    snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "No valid burst found");
+    snprintf(this->srx882_summary_, sizeof(this->srx882_summary_), "No recording");
+    ESP_LOGW(TAG, "RF RECORDER: acquisition had too few edges (%u)", total_edges);
+    return;
+  }
+
+  // A gap this large separates unrelated SRX882 chatter/bursts. Outprize data
+  // edges are normally ~0.5/1.5 ms, with a ~4.5 ms header component.
+  static constexpr uint16_t BURST_SPLIT_GAP_US = 12000;
+  static constexpr uint16_t MIN_BURST_EDGES = 40;
+  static constexpr uint16_t MAX_BURST_EDGES = 420;
+
+  uint16_t best_start = 0;
+  uint16_t best_end = 0;
+  int32_t best_score = -1000000;
+  uint16_t segment_start = 0;
+
+  auto score_segment = [&](uint16_t seg_start, uint16_t seg_end) -> int32_t {
+    if (seg_end <= seg_start) return -1000000;
+    const uint16_t count = seg_end - seg_start;
+    if (count < MIN_BURST_EDGES || count > MAX_BURST_EDGES) return -1000000;
+
+    uint16_t protocol_like = 0;
+    uint16_t very_short = 0;
+    uint16_t mid_noise = 0;
+    uint32_t duration = 0;
+    for (uint16_t i = seg_start; i < seg_end; i++) {
+      const uint16_t d = this->srx882_edges_[i];
+      if (i != seg_start) duration += d;  // exclude the acquisition lead-in gap
+      if ((d >= 350 && d <= 700) || (d >= 1150 && d <= 1850) || (d >= 3500 && d <= 6500)) {
+        protocol_like++;
+      } else if (d < 100) {
+        very_short++;
+      } else if (d < 350) {
+        mid_noise++;
+      }
+    }
+
+    // Reward Outprize-like timing and useful edge density; strongly penalize
+    // the 60-300 us idle chatter characteristic of the raw SRX882 output.
+    int32_t score = static_cast<int32_t>(protocol_like) * 12;
+    score += static_cast<int32_t>(count) * 2;
+    score -= static_cast<int32_t>(very_short) * 14;
+    score -= static_cast<int32_t>(mid_noise) * 5;
+    if (duration >= 25000 && duration <= 500000) score += 150;
+    if (count >= 60 && count <= 180) score += 120;
+    return score;
+  };
+
+  for (uint16_t i = 1; i <= total_edges; i++) {
+    const bool at_end = i == total_edges;
+    const bool split = !at_end && this->srx882_edges_[i] >= BURST_SPLIT_GAP_US;
+    if (at_end || split) {
+      const int32_t score = score_segment(segment_start, i);
+      if (score > best_score) {
+        best_score = score;
+        best_start = segment_start;
+        best_end = i;
+      }
+      segment_start = i;
+    }
+  }
+
+  if (best_score < 0 || best_end <= best_start) {
+    this->srx882_capture_valid_ = false;
+    snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "No clean burst found");
+    snprintf(this->srx882_summary_, sizeof(this->srx882_summary_), "No recording | %u acquisition edges",
+             total_edges);
+    ESP_LOGW(TAG, "RF RECORDER: no clean burst found in %u acquisition edges (best_score=%ld)",
+             total_edges, static_cast<long>(best_score));
+    return;
+  }
+
+  const uint16_t selected_count = best_end - best_start;
+  const uint8_t selected_initial = (best_start == 0) ? this->srx882_initial_level_
+                                                     : this->srx882_levels_[best_start - 1];
+  uint32_t selected_duration = 0;
+
+  // Compact the chosen burst in place. Replace the acquisition lead-in with a
+  // short deterministic idle interval; retain every subsequent edge exactly.
+  for (uint16_t out = 0; out < selected_count; out++) {
+    const uint16_t src = best_start + out;
+    this->srx882_edges_[out] = (out == 0) ? 250 : this->srx882_edges_[src];
+    this->srx882_levels_[out] = this->srx882_levels_[src];
+    selected_duration += this->srx882_edges_[out];
+  }
+  for (uint16_t i = selected_count; i < total_edges; i++) {
+    this->srx882_edges_[i] = 0;
+    this->srx882_levels_[i] = 0;
+  }
+
+  const uint16_t discarded_before = best_start;
+  const uint16_t discarded_after = total_edges - best_end;
+  this->srx882_edge_count_ = selected_count;
+  this->srx882_initial_level_ = selected_initial;
+  this->srx882_capture_duration_us_ = selected_duration;
+  this->srx882_capture_valid_ = selected_count >= MIN_BURST_EDGES;
 
   if (this->srx882_capture_valid_) {
     this->rf_recording_number_++;
-    snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "Recorded #%u",
+    snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "Recorded burst #%u",
              static_cast<unsigned>(this->rf_recording_number_));
     snprintf(this->srx882_summary_, sizeof(this->srx882_summary_),
-             "Recording #%u: %u edges / %u ms",
-             static_cast<unsigned>(this->rf_recording_number_), this->srx882_edge_count_,
-             static_cast<unsigned>(this->srx882_capture_duration_us_ / 1000UL));
-    ESP_LOGI(TAG, "RF RECORDER success recording=%u edges=%u duration=%u us",
-             static_cast<unsigned>(this->rf_recording_number_), this->srx882_edge_count_,
-             static_cast<unsigned>(this->srx882_capture_duration_us_));
+             "Burst #%u: %u edges / %u ms | rejected %u+%u",
+             static_cast<unsigned>(this->rf_recording_number_), selected_count,
+             static_cast<unsigned>(selected_duration / 1000UL), discarded_before, discarded_after);
+    ESP_LOGI(TAG,
+             "RF RECORDER success recording=%u burst_edges=%u duration=%u us start=%u end=%u rejected_before=%u rejected_after=%u score=%ld",
+             static_cast<unsigned>(this->rf_recording_number_), selected_count,
+             static_cast<unsigned>(selected_duration), best_start, best_end,
+             discarded_before, discarded_after, static_cast<long>(best_score));
   } else {
-    snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "No valid recording");
-    ESP_LOGW(TAG, "RF RECORDER finished without a valid capture");
+    snprintf(this->rf_recorder_status_, sizeof(this->rf_recorder_status_), "No valid burst found");
+    snprintf(this->srx882_summary_, sizeof(this->srx882_summary_), "No recording");
+    ESP_LOGW(TAG, "RF RECORDER: extracted burst was not valid");
   }
 }
 
