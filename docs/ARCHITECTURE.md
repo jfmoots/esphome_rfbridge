@@ -1,69 +1,70 @@
-# Architecture
+# RF Bridge Architecture
 
-`esphome_rfbridge` is a transport appliance and protocol bridge, not a fan/light/lock integration.
+RF Bridge is an extensible RF transport appliance. It is not itself a fan, TPMS, light, or lock integration.
 
-## Responsibilities
-
-The ESPHome RF bridge should:
-
-- own the CC1101 radio
-- transmit RF packets
-- receive RF packets
-- cheaply classify captures
-- run candidate protocol decoders when appropriate
-- decode packets into protocol-level events when possible
-- support remote ID learning
-- expose low-level services/actions to Home Assistant
-
-The ESPHome RF bridge should not:
-
-- create fan entities
-- create lock entities
-- create light entities
-- model Home Assistant device state
-- decide what speed, direction, or vent state means to a user
-
-## Receive pipeline
+## Layers
 
 ```text
-capture
-  -> cheap classifier
-  -> candidate decoders
-       - Outprize
-       - TyreGuard (future)
-       - other OOK protocols (future)
-  -> optional diagnostic analyzer
+Home Assistant integrations
+  - discovery and naming
+  - device/entity registry
+  - behavior policy
+  - state presentation
+            |
+            v
+Stable bridge API and decoded events
+            |
+            v
+RF Bridge core
+  - radio ownership
+  - capture scheduling
+  - event routing
+  - capability reporting
+            |
+      +-----+-----+
+      |           |
+      v           v
+Protocol codecs   Radio backends
+  outprize:v1       cc1101
+  tyreguard:future  stx882
+  future codecs     srx882
 ```
 
-Normal mode should remain fast and quiet. Full raw timings, histograms, symbol streams, RLE, and motifs are diagnostic tools only.
+## Codec responsibilities
 
-## Layering
+A codec owns protocol-specific knowledge:
+
+- recognition and validation
+- packet decoding
+- packet/state encoding
+- waveform manufacture
+- preferred normal RX backend
+- preferred normal TX backend
+- optional diagnostic backend
+
+The first codec is Outprize v1. It declares:
 
 ```text
-Home Assistant integration
-        │
-        ▼
-ESPHome native API action/service
-        │
-        ▼
-esphome_rfbridge
-        │
-        ▼
-CC1101
-        │
-        ▼
-433 MHz device
+rx_backend: cc1101
+tx_backend: stx882
+diagnostic_rx_backend: srx882
 ```
 
-## Protocol plugins
+A future TyreGuard codec will likely declare CC1101 receive and no transmit backend.
 
-Protocols should be isolated behind encode/decode helpers. The bridge can eventually register multiple protocol implementations:
+## Home Assistant responsibilities
 
-```text
-protocols/
-  outprize
-  tyreguard
-  other_ook
-```
+Home Assistant integrations own:
 
-Outprize is the first protocol because we have a complete packet model. TyreGuard is a plausible future receive-only candidate. RVLock rolling-code RF decoding is not planned for this bridge; that project will use a cannibalized physical remote/button-push path instead.
+- discovery workflows
+- remote/sensor IDs and friendly names
+- entities and devices
+- assumed-state policy
+- multi-device configuration
+- user-facing diagnostics
+
+The ESP does not create fan, cover, rain, tire, or other product-specific entities.
+
+## Compatibility
+
+v1.5.0 keeps the v1.4.1 Outprize API contract while moving toward codec-based discovery and events. This lets the HA integration be built before removing temporary test surfaces.

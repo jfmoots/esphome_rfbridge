@@ -67,6 +67,7 @@ void RFBridgeComponent::setup() {
 
   this->rx_setup_();
 
+  ESP_LOGI(TAG, "Registered codec: %s", this->outprize_codec_.capability_summary().c_str());
   ESP_LOGI(TAG, "RF Bridge setup complete; CC1101 is in async RX mode and listening");
 }
 
@@ -107,6 +108,8 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  STX882 Available: %s", YESNO(this->stx882_data_pin_ != nullptr));
   ESP_LOGCONFIG(TAG, "  SRX882 Available: %s", YESNO(this->srx882_data_pin_ != nullptr));
   ESP_LOGCONFIG(TAG, "  Diagnostic Logging: %s", YESNO(this->diagnostic_logging_));
+  ESP_LOGCONFIG(TAG, "  Codec: %s", this->outprize_codec_.capability_summary().c_str());
+  ESP_LOGCONFIG(TAG, "  Capabilities: %s", this->get_bridge_capabilities().c_str());
   ESP_LOGCONFIG(TAG, "  Learned Outprize Frame: %s", YESNO(this->outprize_learned_valid_));
   ESP_LOGCONFIG(TAG, "  Outprize Remote ID / 11-bit prefix: 0x%03X", this->outprize_remote_id_ & 0x7FF);
   ESP_LOGCONFIG(TAG, "  RX RSSI Arm Threshold: %d dBm", RX_RSSI_ARM_DBM);
@@ -3009,6 +3012,20 @@ std::string RFBridgeComponent::get_outprize_state_summary() const {
            YESNO(this->outprize_state_.rain_enabled), static_cast<uint8_t>(this->outprize_state_.vent_command),
            this->outprize_state_.low24);
   return std::string(buffer);
+}
+
+
+std::string RFBridgeComponent::get_bridge_capabilities() const {
+  char buffer[256];
+  snprintf(buffer, sizeof(buffer),
+           "bridge=rfbridge version=%s radios[cc1101_rx=%s,cc1101_tx=yes,stx882_tx=%s,srx882_rx=%s] codecs[%s]",
+           RFBRIDGE_VERSION, YESNO(this->cc1101_configured_), YESNO(this->stx882_data_pin_ != nullptr),
+           YESNO(this->srx882_data_pin_ != nullptr), this->outprize_codec_.capability_summary().c_str());
+  return buffer;
+}
+
+bool RFBridgeComponent::has_codec(const std::string &codec_id) const {
+  return codec_id == this->outprize_codec_.id();
 }
 
 }  // namespace rfbridge

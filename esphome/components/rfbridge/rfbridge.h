@@ -8,6 +8,8 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/automation.h"
 #include "esphome/core/helpers.h"
+#include "codec.h"
+#include "codecs/outprize/outprize_codec.h"
 
 namespace esphome {
 namespace rfbridge {
@@ -40,6 +42,7 @@ struct OutprizeState {
 
 class RFBridgeComponent : public Component {
  public:
+  RFBridgeComponent() : outprize_codec_(this) {}
   void setup() override;
   void loop() override;
   void dump_config() override;
@@ -180,6 +183,12 @@ class RFBridgeComponent : public Component {
   std::string get_outprize_state_summary() const;
   std::string get_outprize_command_source() const;
 
+  // v1.5 codec/capability contract. Home Assistant integrations discover codecs,
+  // while each codec owns its preferred receive/transmit backends.
+  OutprizeCodec *get_outprize_codec() { return &this->outprize_codec_; }
+  std::string get_bridge_capabilities() const;
+  bool has_codec(const std::string &codec_id) const;
+
  protected:
   GPIOPin *cs_pin_{nullptr};
   GPIOPin *sck_pin_{nullptr};
@@ -192,6 +201,7 @@ class RFBridgeComponent : public Component {
   GPIOPin *srx882_enable_pin_{nullptr};
 
   OutprizeState outprize_state_{};
+  OutprizeCodec outprize_codec_;
   uint32_t suppress_oem_until_ms_{0};
   void update_outprize_state_from_low24_(uint32_t low24, OutprizeCommandSource source);
   uint8_t decode_outprize_speed_(uint32_t low24) const;

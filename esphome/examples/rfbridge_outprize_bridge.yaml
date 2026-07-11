@@ -1,4 +1,4 @@
-# RF Bridge v1.4.1 transport/API example.
+# RF Bridge v1.5.0 codec/API example.
 # The ESP exposes a stable command/state contract; the future HA integration owns fan/cover entities.
 
 rfbridge:
@@ -116,3 +116,8 @@ text_sensor:
     name: "Outprize State"
     update_interval: 500ms
     lambda: return id(rf_bridge).get_outprize_state_summary();
+
+  - platform: template
+    name: "RF Bridge Capabilities"
+    update_interval: 10s
+    lambda: return id(rf_bridge).get_bridge_capabilities();

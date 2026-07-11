@@ -1,16 +1,20 @@
-# ESPHome RF Bridge v1.4.1
+# ESPHome RF Bridge v1.5.0
 
-v1.4.1 is a diagnostic and API-semantics correction on the v1.4 transport baseline.
+v1.5.0 introduces the codec-oriented RF Bridge architecture while preserving the proven v1.4.1 Outprize API and RF behavior.
 
-The complete-state API now logs its exact inputs and generated Low24 value. The `vent_command` field is an action nibble:
+## Architecture
 
-- `0` = no vent action
-- `4` = close vent
-- `8` = open vent
-- `12` = stop vent
+- **Bridge core:** radio ownership, capture timing, backend availability, capability reporting.
+- **Radio backends:** CC1101 RX/TX, STX882 TX, SRX882 diagnostic RX.
+- **Protocol codecs:** protocol recognition, decode, state encoding, waveform generation, and preferred backend declaration.
+- **Home Assistant integrations:** discovery, device naming, entities, policy, and presentation.
 
-For a fan speed/direction/rain test that should not move the vent, use `vent_command: 0`. The earlier test used `4`, which intentionally requested Vent Close and could make the result look like a power-off failure.
+The first registered codec is `outprize:v1`:
 
-The component still creates no native fan, cover, or switch entities. A separate Home Assistant integration will own those entities.
+- normal RX backend: `cc1101`
+- normal TX backend: `stx882`
+- diagnostic RX backend: `srx882`
 
-Use `esphome/examples/rfbridge_outprize_bridge.yaml` as the matching YAML/API contract.
+No user-facing fan, cover, or switch entities are created by the component. The v1.4.1 API remains available so the future HA Outprize integration can be developed against a stable, proven transport contract.
+
+Use `esphome/examples/rfbridge_outprize_bridge.yaml` as the matching YAML/API test configuration.
