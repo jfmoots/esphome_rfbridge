@@ -17,6 +17,7 @@ CONF_LOW24 = "low24"
 CONF_REMOTE_ID = "remote_id"
 CONF_REPEATS = "repeats"
 CONF_ON_OUTPRIZE_FRAME = "on_outprize_frame"
+CONF_ON_BRIDGE_STATUS = "on_bridge_status"
 
 rfbridge_ns = cg.esphome_ns.namespace("rfbridge")
 RFBridgeComponent = rfbridge_ns.class_("RFBridgeComponent", cg.Component)
@@ -26,6 +27,10 @@ SendOutprizeFanOffAction = rfbridge_ns.class_("SendOutprizeFanOffAction", automa
 OutprizeFrameTrigger = rfbridge_ns.class_(
     "OutprizeFrameTrigger",
     automation.Trigger.template(cg.uint32, cg.uint32, cg.bool_, cg.uint8, cg.bool_, cg.bool_, cg.uint8, cg.int16),
+)
+BridgeStatusTrigger = rfbridge_ns.class_(
+    "BridgeStatusTrigger",
+    automation.Trigger.template(cg.uint32, cg.std_string, cg.std_string),
 )
 
 CONFIG_SCHEMA = cv.Schema(
@@ -45,6 +50,11 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_ON_OUTPRIZE_FRAME): automation.validate_automation(
             {
                 cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(OutprizeFrameTrigger),
+            }
+        ),
+        cv.Optional(CONF_ON_BRIDGE_STATUS): automation.validate_automation(
+            {
+                cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(BridgeStatusTrigger),
             }
         ),
     }
@@ -91,6 +101,18 @@ async def to_code(config):
                 (cg.bool_, "rain_enabled"),
                 (cg.uint8, "vent_command"),
                 (cg.int16, "rssi_dbm"),
+            ],
+            conf,
+        )
+
+    for conf in config.get(CONF_ON_BRIDGE_STATUS, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(
+            trigger,
+            [
+                (cg.uint32, "boot_id"),
+                (cg.std_string, "firmware_version"),
+                (cg.std_string, "capabilities"),
             ],
             conf,
         )

@@ -201,6 +201,10 @@ class RFBridgeComponent : public Component {
   // while each codec owns its preferred receive/transmit backends.
   OutprizeCodec *get_outprize_codec() { return &this->outprize_codec_; }
   std::string get_bridge_capabilities() const;
+  uint32_t get_boot_id() const { return this->boot_id_; }
+  void add_on_bridge_status_callback(std::function<void(uint32_t, std::string, std::string)> &&callback) {
+    this->bridge_status_callback_.add(std::move(callback));
+  }
   bool has_codec(const std::string &codec_id) const;
 
  protected:
@@ -217,6 +221,9 @@ class RFBridgeComponent : public Component {
   OutprizeState outprize_state_{};
   OutprizeCodec outprize_codec_;
   CallbackManager<void(uint32_t, uint32_t, bool, uint8_t, bool, bool, uint8_t, int16_t)> outprize_frame_callback_;
+  CallbackManager<void(uint32_t, std::string, std::string)> bridge_status_callback_;
+  uint32_t boot_id_{0};
+  uint32_t next_status_ms_{0};
   uint32_t suppress_oem_until_ms_{0};
   void update_outprize_state_from_low24_(uint32_t low24, OutprizeCommandSource source);
   uint8_t decode_outprize_speed_(uint32_t low24) const;
@@ -446,6 +453,17 @@ class RFBridgeComponent : public Component {
   uint32_t tx_carrier_started_ms_{0};
   uint16_t tx_carrier_duration_ms_{0};
 
+};
+
+
+class BridgeStatusTrigger : public Trigger<uint32_t, std::string, std::string> {
+ public:
+  explicit BridgeStatusTrigger(RFBridgeComponent *parent) {
+    parent->add_on_bridge_status_callback(
+        [this](uint32_t boot_id, std::string firmware_version, std::string capabilities) {
+          this->trigger(boot_id, firmware_version, capabilities);
+        });
+  }
 };
 
 

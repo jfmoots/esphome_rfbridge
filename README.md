@@ -1,60 +1,26 @@
-# ESPHome RF Bridge v1.5.7
+# ESPHome RF Bridge v1.5.8
 
-## Addressed STX882 routing fix
+v1.5.8 adds the bridge lifecycle contract used by Home Assistant integrations.
+The bridge now publishes a status heartbeat every 10 seconds containing a unique
+boot/session ID, firmware version, and advertised radios/codecs.
 
-v1.5.7 fixes the addressed Outprize command path introduced in v1.5.5. The
-multi-remote `outprize_send_complete_state` API now uses the same canonical
-waveform generator and discrete STX882 transmitter path already proven by the
-single-remote API.
+Normal Outprize operation remains:
 
-The supplied remote ID is embedded in the 35-bit Outprize frame; it no longer
-falls through to the legacy CC1101 asynchronous transmit path.
+- RX: CC1101
+- TX: STX882
+- Diagnostic RX: SRX882
+- Codec: `outprize:v1`
 
-## YAML
+The ESP remains a transport appliance. Fan, vent, rain, discovery, persistence,
+and user-facing entities belong to `ha_outprize`.
 
-No YAML changes are required from v1.5.5. Keep the existing
-`on_outprize_frame` trigger and the existing addressed API action:
+## Required production YAML
 
-```yaml
-    - action: outprize_send_complete_state
-      variables:
-        remote_id: int
-        powered: bool
-        speed_percent: int
-        direction_in: bool
-        rain_enabled: bool
-        vent_command: int
-      then:
-        - lambda: |-
-            id(rf_bridge).send_outprize_complete_state(
-              static_cast<uint32_t>(remote_id),
-              powered,
-              static_cast<uint8_t>(speed_percent),
-              direction_in
-                ? esphome::rfbridge::OutprizeDirection::IN
-                : esphome::rfbridge::OutprizeDirection::OUT,
-              rain_enabled,
-              static_cast<esphome::rfbridge::OutprizeVentCommand>(vent_command & 0x0C),
-              1);
-```
+Keep the existing addressed Outprize actions. Add `on_bridge_status` beside the
+existing `on_outprize_frame` trigger inside the same `rfbridge:` block.
+See `esphome/examples/rfbridge_production.yaml` for the complete matching
+transport section.
 
-## Direct test
-
-```yaml
-action: esphome.esphome_web_bafaac_outprize_send_complete_state
-data:
-  remote_id: 1743
-  powered: true
-  speed_percent: 40
-  direction_in: false
-  rain_enabled: false
-  vent_command: 8
-```
-
-Expected log markers include `codec=outprize`, `tx_backend=stx882`, and
-`OUTPRIZE_BUILTIN TX full35=0x6CF...`.
-
-
-## Addressed fan-off/awake API
-
-Use `send_outprize_fan_off(remote_id, vent_command, repeats)` to stop the fan without invoking dedicated power-off. The vent action nibble may be NONE (0), CLOSE (4), OPEN (8), or STOP (12).
+The status event is a heartbeat. `ha_outprize` v0.1.3 marks its entities
+unavailable if status stops arriving, and automatically recovers when the bridge
+returns with the same or a new boot ID.

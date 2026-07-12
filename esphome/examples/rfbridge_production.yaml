@@ -1,0 +1,89 @@
+# Merge these sections into the existing ESPHome node configuration.
+# Do not create a second api: block.
+
+rfbridge:
+  id: rf_bridge
+  cs_pin: GPIO5
+  sck_pin: GPIO18
+  mosi_pin: GPIO23
+  miso_pin: GPIO19
+  gdo0_pin: GPIO4
+  gdo2_pin: GPIO27
+  stx882_data_pin: GPIO26
+  srx882_data_pin: GPIO25
+  srx882_enable_pin: GPIO33
+  diagnostic_logging: false
+
+  on_outprize_frame:
+    then:
+      - homeassistant.event:
+          event: esphome.rfbridge_outprize_frame
+          data:
+            bridge_id: esphome-web-bafaac
+          data_template:
+            remote_id: "{{ rf_remote_id }}"
+            low24: "{{ rf_low24 }}"
+            powered: "{{ rf_powered }}"
+            speed_percent: "{{ rf_speed_percent }}"
+            direction_in: "{{ rf_direction_in }}"
+            rain_enabled: "{{ rf_rain_enabled }}"
+            vent_command: "{{ rf_vent_command }}"
+            rssi_dbm: "{{ rf_rssi_dbm }}"
+          variables:
+            rf_remote_id: !lambda return remote_id;
+            rf_low24: !lambda return low24;
+            rf_powered: !lambda return powered;
+            rf_speed_percent: !lambda return speed_percent;
+            rf_direction_in: !lambda return direction_in;
+            rf_rain_enabled: !lambda return rain_enabled;
+            rf_vent_command: !lambda return vent_command;
+            rf_rssi_dbm: !lambda return rssi_dbm;
+
+  on_bridge_status:
+    then:
+      - homeassistant.event:
+          event: esphome.rfbridge_status
+          data:
+            bridge_id: esphome-web-bafaac
+          data_template:
+            boot_id: "{{ rf_boot_id }}"
+            firmware_version: "{{ rf_firmware_version }}"
+            capabilities: "{{ rf_capabilities }}"
+          variables:
+            rf_boot_id: !lambda return boot_id;
+            rf_firmware_version: !lambda return firmware_version;
+            rf_capabilities: !lambda return capabilities;
+
+api:
+  actions:
+    - action: outprize_send_complete_state
+      variables:
+        remote_id: int
+        powered: bool
+        speed_percent: int
+        direction_in: bool
+        rain_enabled: bool
+        vent_command: int
+      then:
+        - lambda: |-
+            id(rf_bridge).send_outprize_complete_state(
+              static_cast<uint32_t>(remote_id),
+              powered,
+              static_cast<uint8_t>(speed_percent),
+              direction_in
+                ? esphome::rfbridge::OutprizeDirection::IN
+                : esphome::rfbridge::OutprizeDirection::OUT,
+              rain_enabled,
+              static_cast<esphome::rfbridge::OutprizeVentCommand>(vent_command & 0x0C),
+              1);
+
+    - action: outprize_send_fan_off_awake
+      variables:
+        remote_id: int
+        vent_command: int
+      then:
+        - lambda: |-
+            id(rf_bridge).send_outprize_fan_off(
+              static_cast<uint32_t>(remote_id),
+              static_cast<esphome::rfbridge::OutprizeVentCommand>(vent_command & 0x0C),
+              1);

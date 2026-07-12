@@ -4,6 +4,7 @@
 #include "version.h"
 #include "esphome/core/log.h"
 #include <cstdio>
+#include <esp_system.h>
 
 namespace esphome {
 namespace rfbridge {
@@ -11,10 +12,15 @@ namespace rfbridge {
 static const char *const TAG = "rfbridge";
 
 void RFBridgeComponent::setup() {
+  this->boot_id_ = esp_random();
+  if (this->boot_id_ == 0) this->boot_id_ = 1;
+  this->next_status_ms_ = millis() + 10000;
+
   ESP_LOGI(TAG, "======================================");
   ESP_LOGI(TAG, "ESPHome RF Bridge v%s", RFBRIDGE_VERSION);
   ESP_LOGI(TAG, "Build: %s %s", RFBRIDGE_BUILD_DATE, RFBRIDGE_BUILD_TIME);
   ESP_LOGI(TAG, "Git: %s", RFBRIDGE_GIT_REF);
+  ESP_LOGI(TAG, "Boot ID: %u", this->boot_id_);
   ESP_LOGI(TAG, "======================================");
 
   if (this->cs_pin_ == nullptr || this->sck_pin_ == nullptr || this->mosi_pin_ == nullptr || this->miso_pin_ == nullptr) {
@@ -72,6 +78,12 @@ void RFBridgeComponent::setup() {
 }
 
 void RFBridgeComponent::loop() {
+  const uint32_t now_ms = millis();
+  if (static_cast<int32_t>(now_ms - this->next_status_ms_) >= 0) {
+    this->next_status_ms_ = now_ms + 10000;
+    this->bridge_status_callback_.call(this->boot_id_, std::string(RFBRIDGE_VERSION), this->get_bridge_capabilities());
+  }
+
   if (this->tx_carrier_active_) {
     this->tx_carrier_loop_();
     return;
@@ -89,6 +101,7 @@ void RFBridgeComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  Firmware Version: %s", RFBRIDGE_VERSION);
   ESP_LOGCONFIG(TAG, "  Build: %s %s", RFBRIDGE_BUILD_DATE, RFBRIDGE_BUILD_TIME);
   ESP_LOGCONFIG(TAG, "  Git: %s", RFBRIDGE_GIT_REF);
+  ESP_LOGCONFIG(TAG, "  Boot ID: %u", this->boot_id_);
   LOG_PIN("  CS Pin: ", this->cs_pin_);
   LOG_PIN("  SCK Pin: ", this->sck_pin_);
   LOG_PIN("  MOSI Pin: ", this->mosi_pin_);
