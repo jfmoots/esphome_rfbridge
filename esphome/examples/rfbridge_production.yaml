@@ -1,19 +1,100 @@
-# Merge these sections into the existing ESPHome node configuration.
-# Do not create a second api: block.
+# RF Bridge v1.6.0 production example
+#
+# This is a complete reference configuration. Change the node name, Wi-Fi
+# secrets, bridge_id values, board, and pins as required for your hardware.
+#
+# A production bridge intentionally exposes no protocol-specific entities.
+
+esphome:
+  name: esphome-web-bafaac
+  friendly_name: RF Bridge
+  min_version: 2026.4.0
+  name_add_mac_suffix: false
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+
+api:
+  actions:
+    # Addressed full-state Outprize command used by ha_outprize.
+    - action: outprize_send_complete_state
+      variables:
+        remote_id: int
+        powered: bool
+        speed_percent: int
+        direction_in: bool
+        rain_enabled: bool
+        vent_command: int
+      then:
+        - lambda: |-
+            id(rf_bridge).send_outprize_complete_state(
+              static_cast<uint32_t>(remote_id),
+              powered,
+              static_cast<uint8_t>(speed_percent),
+              direction_in
+                ? esphome::rfbridge::OutprizeDirection::IN
+                : esphome::rfbridge::OutprizeDirection::OUT,
+              rain_enabled,
+              static_cast<esphome::rfbridge::OutprizeVentCommand>(
+                vent_command & 0x0C),
+              1);
+
+    # Stops the fan without forcing the vent closed. The optional vent command
+    # supports none (0), down (4), up (8), and stop (12).
+    - action: outprize_send_fan_off_awake
+      variables:
+        remote_id: int
+        vent_command: int
+      then:
+        - lambda: |-
+            id(rf_bridge).send_outprize_fan_off(
+              static_cast<uint32_t>(remote_id),
+              static_cast<esphome::rfbridge::OutprizeVentCommand>(
+                vent_command & 0x0C),
+              1);
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+web_server:
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/jfmoots/esphome_rfbridge
+      ref: v1.6.0
+      path: esphome/components
+    components:
+      - rfbridge
+    refresh: 0s
 
 rfbridge:
   id: rf_bridge
+
+  # CC1101 SPI and data pins
   cs_pin: GPIO5
   sck_pin: GPIO18
   mosi_pin: GPIO23
   miso_pin: GPIO19
   gdo0_pin: GPIO4
   gdo2_pin: GPIO27
+
+  # Direct ASK/OOK hardware
   stx882_data_pin: GPIO26
   srx882_data_pin: GPIO25
   srx882_enable_pin: GPIO33
+
   diagnostic_logging: false
 
+  # Every complete valid Outprize frame is forwarded to Home Assistant.
   on_outprize_frame:
     then:
       - homeassistant.event:
@@ -39,6 +120,7 @@ rfbridge:
             rf_vent_command: !lambda return vent_command;
             rf_rssi_dbm: !lambda return rssi_dbm;
 
+  # Heartbeat, capabilities, firmware version, and boot-session reporting.
   on_bridge_status:
     then:
       - homeassistant.event:
@@ -53,37 +135,3 @@ rfbridge:
             rf_boot_id: !lambda return boot_id;
             rf_firmware_version: !lambda return firmware_version;
             rf_capabilities: !lambda return capabilities;
-
-api:
-  actions:
-    - action: outprize_send_complete_state
-      variables:
-        remote_id: int
-        powered: bool
-        speed_percent: int
-        direction_in: bool
-        rain_enabled: bool
-        vent_command: int
-      then:
-        - lambda: |-
-            id(rf_bridge).send_outprize_complete_state(
-              static_cast<uint32_t>(remote_id),
-              powered,
-              static_cast<uint8_t>(speed_percent),
-              direction_in
-                ? esphome::rfbridge::OutprizeDirection::IN
-                : esphome::rfbridge::OutprizeDirection::OUT,
-              rain_enabled,
-              static_cast<esphome::rfbridge::OutprizeVentCommand>(vent_command & 0x0C),
-              1);
-
-    - action: outprize_send_fan_off_awake
-      variables:
-        remote_id: int
-        vent_command: int
-      then:
-        - lambda: |-
-            id(rf_bridge).send_outprize_fan_off(
-              static_cast<uint32_t>(remote_id),
-              static_cast<esphome::rfbridge::OutprizeVentCommand>(vent_command & 0x0C),
-              1);
