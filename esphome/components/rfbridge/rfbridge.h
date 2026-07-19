@@ -176,6 +176,13 @@ class RFBridgeComponent : public Component {
   bool send_outprize_complete_state(uint32_t remote_id, bool powered, uint8_t speed_percent,
                                      OutprizeDirection direction, bool rain_enabled,
                                      OutprizeVentCommand vent_command, uint8_t repeats = 1);
+  bool send_outprize_complete_state_family(uint32_t remote_id, uint8_t command_family, bool powered,
+                                            uint8_t speed_percent, OutprizeDirection direction,
+                                            bool rain_enabled, OutprizeVentCommand vent_command,
+                                            uint8_t repeats = 1);
+  bool send_outprize_fan_off_family(uint32_t remote_id, uint8_t command_family,
+                                     OutprizeVentCommand vent_command = OutprizeVentCommand::NONE,
+                                     uint8_t repeats = 1);
 
   // v1.4.x stable state/transport contract. No ESPHome fan/cover entities live here.
   bool set_outprize_complete_state(bool powered, uint8_t speed_percent, OutprizeDirection direction,

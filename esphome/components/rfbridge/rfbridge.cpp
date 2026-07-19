@@ -956,8 +956,9 @@ uint16_t RFBridgeComponent::rx_score_outprize_candidate_(OutprizeDecodeCandidate
   uint16_t score = candidate->bit_count;
   const uint32_t low24 = candidate->low24;
 
-  // All verified Outprize packets in this project have the fixed 0x60 high byte.
-  if ((low24 & 0xFF0000UL) == 0x600000UL) {
+  // Verified Outprize variants use either the 0x60 or 0x40 command family.
+  const uint32_t command_family = low24 & 0xFF0000UL;
+  if (command_family == 0x600000UL || command_family == 0x400000UL) {
     score += 1000;
   }
 
@@ -1163,7 +1164,7 @@ bool RFBridgeComponent::rx_log_outprize_decode_(uint32_t capture_no) {
 
   if (best.valid && best.bit_count >= OUTPRIZE_TX_BITS && millis() >= this->suppress_oem_until_ms_) {
     const uint32_t low24 = best.low24 & 0xFFFFFFUL;
-    const bool powered = low24 != 0x600000UL;
+    const bool powered = low24 != 0x600000UL && low24 != 0x400000UL;
     const uint8_t speed_percent = this->decode_outprize_speed_(low24);
     const bool direction_in = (low24 & 0x20) != 0;
     const bool rain_enabled = (low24 & 0x10) != 0;
@@ -2921,7 +2922,7 @@ void RFBridgeComponent::update_outprize_state_from_low24_(uint32_t low24, Outpri
   low24 &= 0xFFFFFFUL;
   this->outprize_state_.valid = true;
   this->outprize_state_.low24 = low24;
-  this->outprize_state_.powered = (low24 != 0x600000UL);
+  this->outprize_state_.powered = (low24 != 0x600000UL && low24 != 0x400000UL);
   this->outprize_state_.speed_percent = this->decode_outprize_speed_(low24);
   this->outprize_state_.direction = (low24 & 0x20) ? OutprizeDirection::IN : OutprizeDirection::OUT;
   this->outprize_state_.rain_enabled = (low24 & 0x10) != 0;
@@ -2942,7 +2943,14 @@ bool RFBridgeComponent::transmit_cached_state_(uint8_t repeats) {
 }
 
 bool RFBridgeComponent::send_outprize_fan_off(uint32_t remote_id, OutprizeVentCommand vent_command, uint8_t repeats) {
-  const uint32_t low24 = 0x600040UL | (static_cast<uint8_t>(vent_command) & 0x0C);
+  return this->send_outprize_fan_off_family(remote_id, 0x60, vent_command, repeats);
+}
+
+bool RFBridgeComponent::send_outprize_fan_off_family(uint32_t remote_id, uint8_t command_family,
+                                                       OutprizeVentCommand vent_command, uint8_t repeats) {
+  const uint8_t family = command_family == 0x40 ? 0x40 : 0x60;
+  const uint32_t low24 = (static_cast<uint32_t>(family) << 16) | 0x40UL |
+                         (static_cast<uint8_t>(vent_command) & 0x0C);
   const uint32_t prefix = remote_id & 0x7FF;
   ESP_LOGI(TAG,
            "OUTPRIZE_API fan_off_awake route codec=%s tx_backend=%s remote=0x%03X vent=0x%02X low24=0x%06X full35=0x%09llX",
@@ -2956,16 +2964,28 @@ bool RFBridgeComponent::send_outprize_fan_off(uint32_t remote_id, OutprizeVentCo
 bool RFBridgeComponent::send_outprize_complete_state(uint32_t remote_id, bool powered, uint8_t speed_percent,
                                                         OutprizeDirection direction, bool rain_enabled,
                                                         OutprizeVentCommand vent_command, uint8_t repeats) {
+  return this->send_outprize_complete_state_family(remote_id, 0x60, powered, speed_percent,
+                                                    direction, rain_enabled, vent_command, repeats);
+}
+
+bool RFBridgeComponent::send_outprize_complete_state_family(uint32_t remote_id, uint8_t command_family,
+                                                              bool powered, uint8_t speed_percent,
+                                                              OutprizeDirection direction, bool rain_enabled,
+                                                              OutprizeVentCommand vent_command, uint8_t repeats) {
+  const uint8_t family = command_family == 0x40 ? 0x40 : 0x60;
   const uint8_t normalized_speed =
       static_cast<uint8_t>(std::min<uint16_t>(100, ((speed_percent + 5) / 10) * 10));
-  const uint32_t low24 = powered
+  uint32_t low24 = powered
       ? this->encode_outprize_low24(normalized_speed, direction, rain_enabled, vent_command)
-      : 0x600000UL;
+      : (static_cast<uint32_t>(family) << 16);
+  if (powered) {
+    low24 = (low24 & 0x00FFFFUL) | (static_cast<uint32_t>(family) << 16);
+  }
 
   ESP_LOGI(TAG,
-           "OUTPRIZE_API addressed remote=0x%03X powered=%s speed_requested=%u speed_encoded=%u "
+           "OUTPRIZE_API addressed remote=0x%03X family=0x%02X powered=%s speed_requested=%u speed_encoded=%u "
            "direction=%s rain=%s vent=0x%02X -> low24=0x%06X",
-           remote_id & 0x7FF, YESNO(powered), speed_percent, normalized_speed,
+           remote_id & 0x7FF, family, YESNO(powered), speed_percent, normalized_speed,
            direction == OutprizeDirection::IN ? "IN" : "OUT", YESNO(rain_enabled),
            static_cast<uint8_t>(vent_command), low24);
 

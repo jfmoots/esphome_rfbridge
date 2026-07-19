@@ -164,6 +164,8 @@ The RF Bridge device itself is expected to look nearly empty in Home Assistant. 
 
 - `outprize_send_complete_state` — addressed full-state transmission
 - `outprize_send_fan_off_awake` — addressed fan-off command with independent vent action
+- `outprize_send_complete_state_family` — variant-aware addressed full-state transmission
+- `outprize_send_fan_off_awake_family` — variant-aware fan-off and vent action
 
 See [API Reference](docs/api.md) for field definitions and behavioral guarantees.
 

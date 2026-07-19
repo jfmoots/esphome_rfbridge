@@ -70,6 +70,13 @@ Input fields:
 
 The bridge encodes the protocol state and transmits the canonical waveform through the STX882 backend.
 
+## Action: `outprize_send_complete_state_family`
+
+Variant-aware form used by `ha_outprize` v0.1.8 and newer. It accepts the
+same fields as `outprize_send_complete_state`, plus `command_family` (`64` for
+`0x40xxxx` or `96` for `0x60xxxx`). The original action remains available for
+backward compatibility and defaults to `0x60xxxx`.
+
 ## Action: `outprize_send_fan_off_awake`
 
 Stops the fan motor without invoking the dedicated full-power-off behavior that closes the vent.
@@ -87,6 +94,9 @@ This action supports:
 - Fan off, vent down: `vent_command: 4`
 - Fan off, vent up: `vent_command: 8`
 - Fan off, stop vent: `vent_command: 12`
+
+`outprize_send_fan_off_awake_family` is the variant-aware form and adds the
+same `command_family` field described above.
 
 ## Behavioral guarantees
 

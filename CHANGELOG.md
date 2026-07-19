@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.6.1 — Outprize command-family support
+
+- Recognizes both observed Outprize command families, `0x40xxxx` and `0x60xxxx`,
+  as high-confidence protocol frames.
+- Adds variant-aware addressed complete-state and fan-off/awake APIs.
+- Preserves the command family learned from an OEM remote during transmission.
+- Keeps the original APIs as backward-compatible `0x60xxxx` commands.
+- Preserves all v1.6.0 radio, codec, heartbeat, discovery, and waveform behavior.
+
 ## v1.6.0 — Platform Edition
 
 RF Bridge is now documented and presented as a general RF middleware platform rather than a single-device project.
